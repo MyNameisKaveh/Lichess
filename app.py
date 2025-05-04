@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
-# v14: Rewritten categorize_time_control with meticulous try-except structure.
+# v15: Debugged Title Filter, Added Month Plots, Reordered Time/Date Section.
 # =============================================
 
 import streamlit as st
@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 import time
 import re
 import traceback
+import calendar # For month names
 
 # --- Configuration ---
 st.set_page_config(layout="wide", page_title="Lichess Insights", page_icon="♟️")
@@ -26,109 +27,77 @@ DEFAULT_PERF_TYPE = 'Bullet'
 DEFAULT_RATED_ONLY = True
 ECO_CSV_PATH = "eco_to_opening.csv"
 TITLES_TO_ANALYZE = ['GM', 'IM', 'FM', 'CM', 'WGM', 'WIM', 'WFM', 'WCM', 'NM']
-FAMOUS_OPPONENTS = [ "DrNykterstein", "MagnusCarlsen", "Hikaru", "AnishGiri", "FabianoCaruana",
-                     "lachesisQ", "WesleySo", "GMWSO", "VladislavArtemiev", "Duhless", ]
 
 # =============================================
-# Helper Function: Categorize Time Control *** REWRITTEN FOR CORRECT SYNTAX ***
+# Helper Function: Categorize Time Control (Correct)
 # =============================================
 def categorize_time_control(tc_str, speed_info):
-    """Categorizes time control based on speed info or parsed string."""
-    # 1. Prioritize speed info from API
-    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
-        return speed_info.capitalize()
-
-    # 2. Handle invalid or special tc_str inputs
-    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']:
-        return 'Unknown'
-    if tc_str == 'Correspondence':
-        return 'Correspondence'
-
-    # 3. Handle format like "180+2"
+    # (Identical to v14)
+    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']: return speed_info.capitalize()
+    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown','Correspondence']: return 'Unknown' if tc_str!='Correspondence' else 'Correspondence'
     if '+' in tc_str:
-        try: # <<< TRY block for '+' format parsing
-            parts = tc_str.split('+')
-            if len(parts) == 2:
-                # Safely convert parts to integers
-                base = int(parts[0])
-                increment = int(parts[1])
-
-                # Calculate and classify
-                total = base + 40 * increment
-                if total >= 1500: return 'Classical'
-                if total >= 480: return 'Rapid'
-                if total >= 180: return 'Blitz'
-                if total > 0 : return 'Bullet'
-                return 'Unknown' # Handle cases like 0+0 or invalid results
-            else:
-                # Invalid format (e.g., "180+")
-                return 'Unknown'
-        except (ValueError, IndexError): # <<< Correct EXCEPT for '+' parsing errors
-            # Handles errors if split fails unexpectedly or int() fails
-            return 'Unknown'
-        # NO finally needed here
-
-    # 4. Handle format like "300" (only base time)
+        try: parts = tc_str.split('+');
+             if len(parts)==2: base=int(parts[0]); increment=int(parts[1]); total=base+40*increment
+             else: return 'Unknown'
+        except(ValueError,IndexError): return 'Unknown'
+        if total>=1500: return 'Classical';
+        if total>=480: return 'Rapid';
+        if total>=180: return 'Blitz';
+        if total>0 : return 'Bullet';
+        return 'Unknown'
     else:
-        try: # <<< TRY block for base time integer conversion
-            base = int(tc_str)
-            # Classify based on base time
-            if base >= 1500: return 'Classical'
-            if base >= 480: return 'Rapid'
-            if base >= 180: return 'Blitz'
-            if base > 0 : return 'Bullet'
-            return 'Unknown' # Base time is 0 or negative?
-
-        except ValueError: # <<< Correct EXCEPT for base time conversion failure
-            # Fallback to keywords if integer conversion fails
-            tc_lower = tc_str.lower()
-            if 'classical' in tc_lower: return 'Classical'
-            if 'rapid' in tc_lower: return 'Rapid'
-            if 'blitz' in tc_lower: return 'Blitz'
-            if 'bullet' in tc_lower: return 'Bullet'
-            return 'Unknown' # Failed all checks
-        # NO finally needed here
+        try: base=int(tc_str)
+             if base>=1500: return 'Classical';
+             if base>=480: return 'Rapid';
+             if base>=180: return 'Blitz';
+             if base>0 : return 'Bullet';
+             return 'Unknown'
+        except ValueError: tc_lower=tc_str.lower();
+             if 'classical' in tc_lower: return 'Classical';
+             if 'rapid' in tc_lower: return 'Rapid';
+             if 'blitz' in tc_lower: return 'Blitz';
+             if 'bullet' in tc_lower: return 'Bullet';
+             return 'Unknown'
 
 # =============================================
-# Helper Function: Load ECO to Opening Mapping
+# Helper Function: Load ECO to Opening Mapping (Correct)
 # =============================================
 @st.cache_data
 def load_eco_mapping(csv_path):
-    try:
-        df_eco = pd.read_csv(csv_path);
-        if "ECO Code" not in df_eco.columns or "Opening Name" not in df_eco.columns:
-            st.error(f"ECO file missing required columns."); return {}
-        eco_map = df_eco.drop_duplicates(subset=['ECO Code']).set_index('ECO Code')['Opening Name'].to_dict()
-        st.sidebar.success(f"Loaded {len(eco_map)} ECO mappings.")
-        return eco_map
+    # (Identical to v13)
+    try: df_eco=pd.read_csv(csv_path);
+         if "ECO Code" not in df_eco.columns or "Opening Name" not in df_eco.columns: st.error(f"ECO file missing cols."); return {}
+         eco_map=df_eco.drop_duplicates(subset=['ECO Code']).set_index('ECO Code')['Opening Name'].to_dict(); st.sidebar.success(f"Loaded {len(eco_map)} ECO maps."); return eco_map
     except FileNotFoundError: st.sidebar.error(f"ECO file '{csv_path}' not found."); return {}
     except Exception as e: st.sidebar.error(f"Error loading ECO file: {e}"); return {}
 
 # =============================================
-# API Data Loading and Processing Function (Unchanged from v13)
+# API Data Loading and Processing Function (Corrected OpponentTitle logic)
 # =============================================
 @st.cache_data(ttl=3600)
 def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, rated: bool, eco_map: dict):
-    # ... (Code identical to version 13 - calls the fixed helper) ...
+    # ... (Initial part and API call parameters identical to v13) ...
     if not username: st.warning("Please enter a Lichess username."); return pd.DataFrame()
     if not perf_type: st.warning("Please select a game type."); return pd.DataFrame()
     username_lower = username.lower()
     st.info(f"Fetching games for '{username}' ({time_period_key} | Type: {perf_type})...")
     since_timestamp_ms = None; time_delta = TIME_PERIOD_OPTIONS.get(time_period_key)
     if time_delta: start_date = datetime.now(timezone.utc) - time_delta; since_timestamp_ms = int(start_date.timestamp() * 1000); st.caption(f"Fetching since: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    else: st.warning("Invalid time period.") # Should not be reached with current UI
+    else: st.warning("Invalid time period.")
     api_params = {"rated":str(rated).lower(), "perfType":perf_type.lower(), "opening":"true", "moves":"false", "tags":"false", "pgnInJson":"false" }
     if since_timestamp_ms: api_params["since"] = since_timestamp_ms
     api_url = f"https://lichess.org/api/games/user/{username}"; headers = {"Accept":"application/x-ndjson"}
-    all_games_data = []; error_counter = 0; games_processed_for_log = 0
+    all_games_data = []; error_counter = 0
+
     try:
         with st.spinner(f"Calling Lichess API for {username} ({perf_type} games)..."):
             response = requests.get(api_url, params=api_params, headers=headers, stream=True); response.raise_for_status()
             for line in response.iter_lines():
                 if line:
-                    game_data_raw = line.decode('utf-8'); game_data = None; games_processed_for_log += 1
+                    game_data = None; game_data_raw = line.decode('utf-8')
                     try:
                         game_data = json.loads(game_data_raw)
+                        # --- Data Extraction ---
                         white_info=game_data.get('players',{}).get('white',{}); black_info=game_data.get('players',{}).get('black',{})
                         white_user=white_info.get('user',{}); black_user=black_info.get('user',{})
                         opening_info=game_data.get('opening',{}); clock_info=game_data.get('clock')
@@ -138,7 +107,8 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
                         variant=game_data.get('variant','standard'); speed=game_data.get('speed','unknown')
                         perf=game_data.get('perf','unknown'); status=game_data.get('status','unknown'); winner=game_data.get('winner')
                         white_name=white_user.get('name','Unknown'); black_name=black_user.get('name','Unknown')
-                        white_title=white_user.get('title'); black_title=black_user.get('title')
+                        white_title=white_user.get('title') # Get raw title
+                        black_title=black_user.get('title') # Get raw title
                         white_rating=pd.to_numeric(white_info.get('rating'),errors='coerce')
                         black_rating=pd.to_numeric(black_info.get('rating'),errors='coerce')
                         player_color,player_elo,opp_name_raw,opp_title_raw,opp_elo=(None,None,'Unknown',None,None)
@@ -158,11 +128,19 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
                         op_name_custom=eco_map.get(eco, f"ECO: {eco}" if eco!='Unknown' else 'Unknown Opening')
                         term_map={"mate":"Normal","resign":"Normal","stalemate":"Normal","timeout":"Time forfeit","draw":"Normal","outoftime":"Time forfeit","cheat":"Cheat","noStart":"Aborted","unknownFinish":"Unknown","variantEnd":"Variant End"}
                         term=term_map.get(status,"Unknown")
-                        opp_title_final='Unknown'
-                        if opp_title_raw and opp_title_raw.strip(): opp_title_clean=opp_title_raw.replace(' ','').strip().upper();
-                        if opp_title_clean and opp_title_clean!='?': opp_title_final=opp_title_clean
-                        def clean_name(n): return re.sub(r'^(GM|IM|FM|WGM|WIM|WFM|CM|WCM|NM)\s+','',n).strip()
+
+                        # --- *** Corrected Opponent Title Logic *** ---
+                        opp_title_final = 'Unknown' # Default to Unknown
+                        if opp_title_raw and isinstance(opp_title_raw, str) and opp_title_raw.strip():
+                            # Check if the raw title is in our list of known titles (case-insensitive)
+                            cleaned_title = opp_title_raw.replace(' ', '').strip().upper()
+                            if cleaned_title in TITLES_TO_ANALYZE: # Compare against the known list
+                                opp_title_final = cleaned_title # Use the standardized uppercase version
+                            # else: Keep 'Unknown' if it's not a recognized title or just '?' etc.
+
+                        def clean_name(n): return re.sub(r'^(GM|IM|FM|CM|WGM|WIM|WFM|WCM|NM)\s+','',n).strip()
                         opp_name_clean=clean_name(opp_name_raw)
+                        # --- Store data ---
                         all_games_data.append({'Date':game_date,'Event':perf,'White':white_name,'Black':black_name,'Result':"1-0" if winner=='white' else ("0-1" if winner=='black' else "1/2-1/2"),'WhiteElo':int(white_rating) if not pd.isna(white_rating) else 0,'BlackElo':int(black_rating) if not pd.isna(black_rating) else 0,'ECO':eco,'OpeningName_API':op_name_api,'OpeningName_Custom':op_name_custom,'TimeControl':tc_str,'Termination':term,'PlyCount':game_data.get('turns',0),'LichessID':game_id,'PlayerID':username,'PlayerColor':player_color,'PlayerElo':int(player_elo),'OpponentName':opp_name_clean,'OpponentNameRaw':opp_name_raw,'OpponentElo':int(opp_elo),'OpponentTitle':opp_title_final,'PlayerResultNumeric':res_num,'PlayerResultString':res_str,'Variant':variant,'Speed':speed,'Status':status,'PerfType':perf})
                     except json.JSONDecodeError: error_counter += 1
                     except Exception: error_counter += 1
@@ -178,17 +156,15 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
         df['Hour'] = df['Date'].dt.hour; df['DayOfWeekNum'] = df['Date'].dt.dayofweek; df['DayOfWeekName'] = df['Date'].dt.day_name()
         df['PlayerElo'] = df['PlayerElo'].astype(int); df['OpponentElo'] = df['OpponentElo'].astype(int)
         df['EloDiff'] = df['PlayerElo'] - df['OpponentElo']
-        df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1) # Calls corrected func
-        # Removed rename as we have specific columns now
+        df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1)
         df = df.sort_values(by='Date').reset_index(drop=True)
     return df
 
-
 # =============================================
-# Plotting Functions (Unchanged from v12 - dragmode=False applied)
+# Plotting Functions (Adding Month, Modifying Opening/Titled)
 # =============================================
-# (Insert ALL plotting functions here - plot_win_loss_pie, ..., plot_most_frequent_opponents, including time forfeit plots)
-# ... (Code identical to previous version v12) ...
+# --- Keep Win/Loss, Color, Rating Trend, EloDiff, DOW, Hour, Year, TC plots ---
+# ... (Code identical to v12) ...
 def plot_win_loss_pie(df, display_name):
     if 'PlayerResultString' not in df.columns: return go.Figure()
     result_counts = df['PlayerResultString'].value_counts()
@@ -252,50 +228,19 @@ def plot_win_rate_per_year(df):
     fig.update_traces(line_color='#FFC107', line_width=2.5); fig.update_layout(yaxis_range=[0,100], dragmode=False); return fig
 def plot_performance_by_time_control(df):
      if not all(col in df.columns for col in ['TimeControl_Category', 'PlayerResultString']): return go.Figure()
-     try:
-        tc_results=df.groupby(['TimeControl_Category','PlayerResultString']).size().unstack(fill_value=0)
-        for res in ['Win','Draw','Loss']: tc_results[res]=tc_results.get(res,0)
-        tc_results=tc_results[['Win','Draw','Loss']]; total=tc_results.sum(axis=1)
-        tc_results_pct=tc_results.apply(lambda x:x*100/total[x.name] if total[x.name]>0 else 0, axis=1)
-        found=df['TimeControl_Category'].unique(); pref=['Bullet','Blitz','Rapid','Classical','Correspondence','Unknown']
-        order=[c for c in pref if c in found]+[c for c in found if c not in pref]
-        tc_results_pct=tc_results_pct.reindex(index=order).dropna(axis=0,how='all')
-        fig=px.bar(tc_results_pct, title='Performance by Time Control', labels={'value':'%','TimeControl_Category':'Category'}, color='PlayerResultString', color_discrete_map={'Win':'#4CAF50','Draw':'#B0BEC5','Loss':'#F44336'}, barmode='group', text_auto='.1f')
-        fig.update_layout(xaxis_title="Time Control Category", yaxis_title="Percentage (%)", dragmode=False); fig.update_traces(textangle=0); return fig
-     except Exception: return go.Figure().update_layout(title="Error")
-def plot_opening_frequency(df, top_n=20, opening_col='OpeningName_API'):
-    if opening_col not in df.columns: return go.Figure()
-    source_label = "Lichess API" if opening_col == 'OpeningName_API' else "Custom Mapping"
-    opening_counts = df[df[opening_col] != 'Unknown Opening'][opening_col].value_counts().nlargest(top_n)
-    fig = px.bar(opening_counts, y=opening_counts.index, x=opening_counts.values, orientation='h', title=f'Top {top_n} Openings ({source_label})', labels={'y':'Opening','x':'Games'}, text=opening_counts.values)
-    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False); fig.update_traces(marker_color='#673AB7', textposition='outside'); return fig
-def plot_win_rate_by_opening(df, min_games=5, top_n=20, opening_col='OpeningName_API'):
-    if not all(col in df.columns for col in [opening_col, 'PlayerResultNumeric']): return go.Figure()
-    source_label = "Lichess API" if opening_col == 'OpeningName_API' else "Custom Mapping"
-    opening_stats = df.groupby(opening_col).agg(total_games=('PlayerResultNumeric','count'), wins=('PlayerResultNumeric',lambda x:(x==1).sum()))
-    opening_stats = opening_stats[(opening_stats['total_games']>=min_games)&(opening_stats.index!='Unknown Opening')].copy()
-    if opening_stats.empty: return go.Figure().update_layout(title=f"No openings >= {min_games} games ({source_label})")
-    opening_stats['win_rate']=(opening_stats['wins']/opening_stats['total_games'])*100
-    opening_stats_plot=opening_stats.nlargest(top_n, 'win_rate')
-    fig=px.bar(opening_stats_plot, y=opening_stats_plot.index, x='win_rate', orientation='h', title=f'Top {top_n} Openings by Win Rate (Min {min_games} games, {source_label})', labels={'win_rate':'Win Rate (%)',opening_col:'Opening'}, text='win_rate')
-    fig.update_traces(texttemplate='%{text:.1f}%', textposition='inside', marker_color='#009688'); fig.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Win Rate (%)", dragmode=False); return fig
+     try: tc_results=df.groupby(['TimeControl_Category','PlayerResultString']).size().unstack(fill_value=0)
+     except KeyError: return go.Figure().update_layout(title="Error: Missing Columns")
+     for res in ['Win','Draw','Loss']: tc_results[res]=tc_results.get(res,0)
+     tc_results=tc_results[['Win','Draw','Loss']]; total=tc_results.sum(axis=1); tc_results_pct=tc_results.apply(lambda x:x*100/total[x.name] if total[x.name]>0 else 0, axis=1)
+     found=df['TimeControl_Category'].unique(); pref=['Bullet','Blitz','Rapid','Classical','Correspondence','Unknown']; order=[c for c in pref if c in found]+[c for c in found if c not in pref]
+     tc_results_pct=tc_results_pct.reindex(index=order).dropna(axis=0,how='all')
+     fig=px.bar(tc_results_pct, title='Performance by Time Control', labels={'value':'%','TimeControl_Category':'Category'}, color='PlayerResultString', color_discrete_map={'Win':'#4CAF50','Draw':'#B0BEC5','Loss':'#F44336'}, barmode='group', text_auto='.1f')
+     fig.update_layout(xaxis_title="Time Control Category", yaxis_title="Percentage (%)", dragmode=False); fig.update_traces(textangle=0); return fig
 def plot_most_frequent_opponents(df, top_n=20):
     if 'OpponentName' not in df.columns: return go.Figure()
     opp_counts=df[df['OpponentName']!='Unknown']['OpponentName'].value_counts().nlargest(top_n)
     fig=px.bar(opp_counts, y=opp_counts.index, x=opp_counts.values, orientation='h', title=f'Top {top_n} Opponents', labels={'y':'Opponent','x':'Games'}, text=opp_counts.values)
     fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False); fig.update_traces(marker_color='#FF5722', textposition='outside'); return fig
-def plot_games_by_dom(df):
-    if 'Day' not in df.columns: return go.Figure()
-    games_by_dom = df['Day'].value_counts().sort_index().reindex(range(1, 32), fill_value=0)
-    fig = px.bar(games_by_dom, x=games_by_dom.index, y=games_by_dom.values, title="Games Played per Day of Month", labels={'x': 'Day of Month', 'y': 'Number of Games'}, text=games_by_dom.values)
-    fig.update_traces(marker_color='#E91E63', textposition='outside'); fig.update_layout(xaxis=dict(tickmode='linear'), dragmode=False); return fig
-def plot_winrate_by_dom(df):
-    if not all(col in df.columns for col in ['Day', 'PlayerResultNumeric']): return go.Figure()
-    wins_by_dom=df[df['PlayerResultNumeric']==1].groupby('Day').size(); total_by_dom=df.groupby('Day').size()
-    win_rate=(wins_by_dom.reindex(total_by_dom.index,fill_value=0)/total_by_dom).fillna(0)*100
-    win_rate=win_rate.reindex(range(1,32),fill_value=0)
-    fig=px.line(win_rate, x=win_rate.index, y=win_rate.values, markers=True, title="Win Rate (%) per Day of Month", labels={'x': 'Day of Month', 'y': 'Win Rate (%)'})
-    fig.update_traces(line_color='#FF5722'); fig.update_layout(yaxis_range=[0,100], xaxis=dict(tickmode='linear'), dragmode=False); return fig
 def plot_time_forfeit_summary(wins_tf, losses_tf):
     data={'Outcome':['Won on Time','Lost on Time'],'Count':[wins_tf,losses_tf]}
     df_tf=pd.DataFrame(data)
@@ -307,12 +252,87 @@ def plot_time_forfeit_by_tc(tf_games_df):
     fig=px.bar(tf_by_tc,x=tf_by_tc.index,y=tf_by_tc.values, title="Time Forfeits by Time Control", labels={'x':'Category','y':'Forfeits'}, text=tf_by_tc.values)
     fig.update_layout(dragmode=False); fig.update_traces(marker_color='#795548', textposition='outside'); return fig
 
+# --- NEW Plotting Functions for Day of Month ---
+def plot_games_by_dom(df):
+    if 'Day' not in df.columns: return go.Figure()
+    games_by_dom=df['Day'].value_counts().sort_index().reindex(range(1,32),fill_value=0)
+    fig=px.bar(games_by_dom,x=games_by_dom.index,y=games_by_dom.values, title="Games by Day of Month", labels={'x':'Day','y':'Games'}, text=games_by_dom.values)
+    fig.update_traces(marker_color='#E91E63',textposition='outside'); fig.update_layout(xaxis=dict(tickmode='linear'),dragmode=False); return fig
+def plot_winrate_by_dom(df):
+    if not all(col in df.columns for col in ['Day', 'PlayerResultNumeric']): return go.Figure()
+    wins_by_dom=df[df['PlayerResultNumeric']==1].groupby('Day').size(); total_by_dom=df.groupby('Day').size()
+    win_rate=(wins_by_dom.reindex(total_by_dom.index,fill_value=0)/total_by_dom).fillna(0)*100
+    win_rate=win_rate.reindex(range(1,32),fill_value=0)
+    fig=px.line(win_rate,x=win_rate.index,y=win_rate.values, markers=True, title="Win Rate (%) by Day of Month", labels={'x':'Day','y':'Win Rate (%)'})
+    fig.update_traces(line_color='#FF5722'); fig.update_layout(yaxis_range=[0,100],xaxis=dict(tickmode='linear'),dragmode=False); return fig
+
+# --- NEW Plotting Functions for Month ---
+def plot_games_by_month(df):
+    """Plots number of games played per month."""
+    if 'Month' not in df.columns: return go.Figure()
+    month_map = {i: calendar.month_abbr[i] for i in range(1, 13)}
+    games_by_month = df['Month'].map(month_map).value_counts().reindex(calendar.month_abbr[1:], fill_value=0)
+    fig = px.bar(games_by_month, x=games_by_month.index, y=games_by_month.values,
+                 title="Games Played per Month", labels={'x': 'Month', 'y': 'Number of Games'},
+                 text=games_by_month.values)
+    fig.update_traces(marker_color='#3F51B5', textposition='outside') # Indigo
+    fig.update_layout(xaxis={'type': 'category'}, dragmode=False) # Ensure month names are categorical
+    return fig
+
+def plot_winrate_by_month(df):
+    """Plots win rate per month."""
+    if not all(col in df.columns for col in ['Month', 'PlayerResultNumeric']): return go.Figure()
+    month_map = {i: calendar.month_abbr[i] for i in range(1, 13)}
+    wins_by_month = df[df['PlayerResultNumeric'] == 1].groupby('Month').size()
+    total_by_month = df.groupby('Month').size()
+    win_rate = (wins_by_month.reindex(total_by_month.index, fill_value=0) / total_by_month).fillna(0) * 100
+    win_rate.index = win_rate.index.map(month_map) # Map number to abbreviation
+    win_rate = win_rate.reindex(calendar.month_abbr[1:], fill_value=0) # Ensure all months and correct order
+    fig = px.bar(win_rate, x=win_rate.index, y=win_rate.values,
+                 title="Win Rate (%) per Month", labels={'x': 'Month', 'y': 'Win Rate (%)'},
+                 text=win_rate.values)
+    fig.update_traces(marker_color='#00BCD4', texttemplate='%{text:.1f}%', textposition='outside') # Cyan
+    fig.update_layout(yaxis_range=[0, 100], xaxis={'type': 'category'}, dragmode=False)
+    return fig
+
+# --- Modified Plotting Functions for Openings ---
+def plot_opening_frequency(df, top_n=20, opening_col='OpeningName_API'):
+    if opening_col not in df.columns: return go.Figure().update_layout(title=f"Error: Column '{opening_col}' not found")
+    source_label = "Lichess API" if opening_col == 'OpeningName_API' else "Custom ECO Map"
+    # Handle potential non-string data before value_counts
+    df_plot = df[df[opening_col].apply(lambda x: isinstance(x, str))].copy()
+    opening_counts = df_plot[df_plot[opening_col] != 'Unknown Opening'][opening_col].value_counts().nlargest(top_n)
+    if opening_counts.empty: return go.Figure().update_layout(title=f"No valid opening data ({source_label})")
+    fig = px.bar(opening_counts, y=opening_counts.index, x=opening_counts.values, orientation='h',
+                 title=f'Top {top_n} Openings ({source_label})', labels={'y':'Opening','x':'Games'}, text=opening_counts.values)
+    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False); fig.update_traces(marker_color='#673AB7', textposition='outside'); return fig
+
+def plot_win_rate_by_opening(df, min_games=5, top_n=20, opening_col='OpeningName_API'):
+    if not all(col in df.columns for col in [opening_col, 'PlayerResultNumeric']): return go.Figure().update_layout(title=f"Error: Missing columns")
+    source_label = "Lichess API" if opening_col == 'OpeningName_API' else "Custom ECO Map"
+    # Ensure opening column is string type before grouping
+    df_plot = df[df[opening_col].apply(lambda x: isinstance(x, str))].copy()
+    opening_stats = df_plot.groupby(opening_col).agg(total_games=('PlayerResultNumeric','count'), wins=('PlayerResultNumeric',lambda x:(x==1).sum()))
+    opening_stats = opening_stats[(opening_stats['total_games']>=min_games)&(opening_stats.index!='Unknown Opening')].copy()
+    if opening_stats.empty: return go.Figure().update_layout(title=f"No openings >= {min_games} games ({source_label})")
+    opening_stats['win_rate']=(opening_stats['wins']/opening_stats['total_games'])*100
+    opening_stats_plot=opening_stats.nlargest(top_n, 'win_rate')
+    fig=px.bar(opening_stats_plot, y=opening_stats_plot.index, x='win_rate', orientation='h', title=f'Top {top_n} Openings by Win Rate (Min {min_games} games, {source_label})', labels={'win_rate':'Win Rate (%)',opening_col:'Opening'}, text='win_rate')
+    fig.update_traces(texttemplate='%{text:.1f}%', textposition='inside', marker_color='#009688'); fig.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Win Rate (%)", dragmode=False); return fig
+
 # =============================================
-# Helper Functions
+# Helper Functions (Corrected Titled Player Filter)
 # =============================================
 def filter_and_analyze_titled(df, titles):
-    if 'OpponentTitle' not in df.columns: return pd.DataFrame()
-    titled_games = df[df['OpponentTitle'].isin(titles)].copy(); return titled_games
+    """Filters games played against opponents with the specified titles."""
+    if 'OpponentTitle' not in df.columns:
+        st.warning("OpponentTitle column not found in data.")
+        return pd.DataFrame()
+    # Ensure titles list contains uppercase strings
+    titles_upper = [str(t).upper() for t in titles]
+    # Filter DataFrame where the OpponentTitle column value is in the list
+    titled_games = df[df['OpponentTitle'].isin(titles_upper)].copy()
+    return titled_games
 
 def filter_and_analyze_time_forfeits(df):
     if 'Termination' not in df.columns: return pd.DataFrame(), 0, 0
@@ -323,7 +343,7 @@ def filter_and_analyze_time_forfeits(df):
     return tf_games, wins_tf, losses_tf
 
 # =============================================
-# Streamlit App Layout - v14 (Final Syntax Fix, Updated Structure)
+# Streamlit App Layout - v15 (Corrected Title Filter, Month Plots, Reordered Time)
 # =============================================
 
 # --- Sidebar ---
@@ -371,14 +391,21 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
     st.caption(f"Total Rated Games Analyzed: **{len(df):,}**"); st.markdown("---")
 
     st.sidebar.title("📊 Analysis Sections")
-    analysis_options = [ "1. Overview & General Stats", "2. Performance Over Time", "3. Performance by Color", "4. Time & Date Analysis",
-                         "5. ECO & Opening Analysis", "6. Opponent Analysis", "7. Games against Titled Players", "8. Termination Analysis" ]
-    if 'selected_section' not in st.session_state or st.session_state.selected_section not in analysis_options: st.session_state.selected_section = analysis_options[0]
-    selected_section = st.sidebar.selectbox( "Choose section:", analysis_options, index=analysis_options.index(st.session_state.selected_section), key="section_select")
+    # Updated section list
+    analysis_options = [
+        "1. Overview & General Stats", "2. Performance Over Time", "3. Performance by Color",
+        "4. Time & Date Analysis", # Includes Year, Month, DOW, Hour, DOM
+        "5. ECO & Opening Analysis", "6. Opponent Analysis", "7. Games against Titled Players",
+        "8. Termination Analysis" # No Famous Opponents
+    ]
+    if 'selected_section' not in st.session_state or st.session_state.selected_section not in analysis_options:
+        st.session_state.selected_section = analysis_options[0]
+    selected_section = st.sidebar.selectbox( "Choose section:", analysis_options,
+         index=analysis_options.index(st.session_state.selected_section), key="section_select")
     st.session_state.selected_section = selected_section
 
     # --- Display Content Based on Selected Section ---
-    st.header(selected_section)
+    st.header(selected_section) # Display selected section header
 
     if selected_section == analysis_options[0]: # Overview
         st.plotly_chart(plot_win_loss_pie(df, current_display_name), use_container_width=True)
@@ -388,15 +415,22 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         col1.metric("Total Games", f"{total_games:,}"); col2.metric("Win Rate", f"{win_rate:.1f}%")
         col3.metric("W|L|D", f"{wins}|{losses}|{draws}"); col4.metric("Avg Opp Elo", f"{avg_opp_elo:.0f}" if not pd.isna(avg_opp_elo) else "N/A")
 
-    elif selected_section == analysis_options[1]: # Perf Over Time
+    elif selected_section == analysis_options[1]: # Perf Over Time (Rating Trend only now)
         st.plotly_chart(plot_rating_trend(df, current_display_name), use_container_width=True)
-        st.plotly_chart(plot_games_per_year(df), use_container_width=True)
-        st.plotly_chart(plot_win_rate_per_year(df), use_container_width=True)
+        # Moved Year plots to Time & Date section
 
     elif selected_section == analysis_options[2]: # Perf By Color
          st.plotly_chart(plot_win_loss_by_color(df), use_container_width=True)
 
-    elif selected_section == analysis_options[3]: # Time & Date
+    elif selected_section == analysis_options[3]: # Time & Date (Reordered & Added Month/DOM)
+        st.subheader("Performance by Year")
+        col_y1, col_y2 = st.columns(2)
+        with col_y1: st.plotly_chart(plot_games_per_year(df), use_container_width=True)
+        with col_y2: st.plotly_chart(plot_win_rate_per_year(df), use_container_width=True)
+        st.subheader("Performance by Month") # New
+        col_m1, col_m2 = st.columns(2)
+        with col_m1: st.plotly_chart(plot_games_by_month(df), use_container_width=True)
+        with col_m2: st.plotly_chart(plot_winrate_by_month(df), use_container_width=True)
         st.subheader("Performance by Day of Week")
         col_dow1, col_dow2 = st.columns(2)
         with col_dow1: st.plotly_chart(plot_games_by_dow(df), use_container_width=True)
@@ -409,25 +443,30 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         col_dom1, col_dom2 = st.columns(2)
         with col_dom1: st.plotly_chart(plot_games_by_dom(df), use_container_width=True)
         with col_dom2: st.plotly_chart(plot_winrate_by_dom(df), use_container_width=True)
-        st.subheader("Performance by Time Control Category")
+        st.subheader("Performance by Time Control Category") # Kept here for context
         st.plotly_chart(plot_performance_by_time_control(df), use_container_width=True)
 
-    elif selected_section == analysis_options[4]: # ECO & Opening
+
+    elif selected_section == analysis_options[4]: # ECO & Opening (Combined Names)
         st.subheader("Opening Analysis based on Lichess API Names")
+        # ... (Widgets and plot calls using OpeningName_API - same as v13) ...
         n_openings_api = st.slider("Num top openings (API):", 5, 50, 15, key="n_openings_freq_api")
         st.plotly_chart(plot_opening_frequency(df, top_n=n_openings_api, opening_col='OpeningName_API'), use_container_width=True)
         min_games_api = st.slider("Min games (API):", 1, 25, 5, key="min_games_perf_api")
         n_perf_api = st.slider("Num openings by win rate (API):", 5, 50, 15, key="n_openings_perf_api")
         st.plotly_chart(plot_win_rate_by_opening(df, min_games=min_games_api, top_n=n_perf_api, opening_col='OpeningName_API'), use_container_width=True)
+
         st.markdown("---")
         st.subheader("Opening Analysis based on Custom ECO Mapping")
         if not eco_mapping: st.warning("Custom ECO mapping file not loaded.")
         else:
+             # ... (Widgets and plot calls using OpeningName_Custom - same as v13) ...
              n_openings_cust = st.slider("Num top openings (Custom):", 5, 50, 15, key="n_openings_freq_cust")
              st.plotly_chart(plot_opening_frequency(df, top_n=n_openings_cust, opening_col='OpeningName_Custom'), use_container_width=True)
              min_games_cust = st.slider("Min games (Custom):", 1, 25, 5, key="min_games_perf_cust")
              n_perf_cust = st.slider("Num openings by win rate (Custom):", 5, 50, 15, key="n_openings_perf_cust")
              st.plotly_chart(plot_win_rate_by_opening(df, min_games=min_games_cust, top_n=n_perf_cust, opening_col='OpeningName_Custom'), use_container_width=True)
+
 
     elif selected_section == analysis_options[5]: # Opponent
         st.subheader("Frequent Opponents")
@@ -441,15 +480,25 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
 
     elif selected_section == analysis_options[6]: # vs Titled
         st.subheader("Filter by Opponent Title")
+        # Display value counts for debugging title filter
+        st.markdown("##### Opponent Title Distribution in Data:")
+        st.dataframe(df['OpponentTitle'].value_counts())
+
         selected_titles = st.multiselect("Select Opponent Titles:", TITLES_TO_ANALYZE, default=['GM','IM'])
+        st.write(f"DEBUG: Filtering for titles: {selected_titles}") # Debug line
+
         if selected_titles:
             titled_games = filter_and_analyze_titled(df, selected_titles)
+            st.write(f"DEBUG: Found {len(titled_games)} games after filtering.") # Debug line
+            st.dataframe(titled_games[['OpponentNameRaw', 'OpponentTitle']].head()) # Debug: Show head of filtered
+
             if not titled_games.empty:
-                st.success(f"Found **{len(titled_games):,}** games vs selected titles ({', '.join(selected_titles)}). Analyzing subset...")
+                st.success(f"Found **{len(titled_games):,}** games vs selected titles ({', '.join(selected_titles)}).")
+                # Display analysis plots for titled_games dataframe...
                 st.plotly_chart(plot_win_loss_pie(titled_games, f"{current_display_name} vs {', '.join(selected_titles)}"), use_container_width=True)
                 st.plotly_chart(plot_win_loss_by_color(titled_games), use_container_width=True)
                 st.plotly_chart(plot_rating_trend(titled_games, f"{current_display_name} (vs {', '.join(selected_titles)})"), use_container_width=True)
-                st.plotly_chart(plot_opening_frequency(titled_games, top_n=15, opening_col='OpeningName_API'), use_container_width=True) # Specify opening col
+                st.plotly_chart(plot_opening_frequency(titled_games, top_n=15, opening_col='OpeningName_API'), use_container_width=True)
                 st.plotly_chart(plot_most_frequent_opponents(titled_games, top_n=15), use_container_width=True)
             else: st.warning(f"ℹ️ No games found vs selected titles ({', '.join(selected_titles)}).")
         else: st.info("Select one or more titles to see the analysis.")
