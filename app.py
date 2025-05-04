@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
-# v3: Added Performance Type selection.
+# v4: Single Perf Type selection (selectbox), Removed "All Time".
 # =============================================
 
 import streamlit as st
@@ -23,18 +23,18 @@ st.set_page_config(
 )
 
 # --- Constants & Defaults ---
+# Updated Time Periods (Removed "All Time")
 TIME_PERIOD_OPTIONS = {
     "Last Month": timedelta(days=30),
     "Last 3 Months": timedelta(days=90),
     "Last Year": timedelta(days=365),
-    "All Time": None
+    # "All Time": None # Removed for performance reasons on free tier
 }
 DEFAULT_TIME_PERIOD = "Last Year"
 
-# Define available performance types (Lichess keys)
-PERF_TYPE_OPTIONS = ['bullet', 'blitz', 'rapid', 'classical', 'correspondence', 'chess960', 'antichess', 'atomic', 'horde', 'kingOfTheHill', 'racingKings', 'threeCheck', 'crazyhouse']
-# Define default selection for the multiselect widget
-DEFAULT_PERF_SELECTION = ['bullet'] # Defaulting to Bullet as requested
+# Define available performance types for single selection
+PERF_TYPE_OPTIONS_SINGLE = ['Bullet', 'Blitz', 'Rapid'] # Limited options
+DEFAULT_PERF_TYPE = 'Bullet' # Defaulting to Bullet as requested
 
 DEFAULT_RATED_ONLY = True
 
@@ -42,24 +42,21 @@ DEFAULT_RATED_ONLY = True
 # Helper Function: Categorize Time Control (Corrected)
 # =============================================
 def categorize_time_control(tc_str, speed_info):
-    """Categorizes time control based on speed info or parsed string."""
+    # Prioritize speed info if available and standard
     if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
         return speed_info.capitalize()
+    # Fallback parsing (less likely needed if filtering by perf type)
     if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']: return 'Unknown'
     if tc_str == 'Correspondence': return 'Correspondence'
-
     if '+' in tc_str:
         try:
-            parts = tc_str.split('+')
-            if len(parts) == 2:
-                base = int(parts[0]); increment = int(parts[1])
-                total = base + 40 * increment
-                if total >= 1500: return 'Classical';
-                if total >= 480: return 'Rapid';
-                if total >= 180: return 'Blitz';
-                if total > 0 : return 'Bullet';
-                return 'Unknown'
-            else: return 'Unknown'
+            parts = tc_str.split('+'); base = int(parts[0]); increment = int(parts[1]) if len(parts) > 1 else 0
+            total = base + 40 * increment
+            if total >= 1500: return 'Classical';
+            if total >= 480: return 'Rapid';
+            if total >= 180: return 'Blitz';
+            if total > 0 : return 'Bullet';
+            return 'Unknown'
         except (ValueError, IndexError): return 'Unknown'
     else:
         try:
@@ -69,45 +66,33 @@ def categorize_time_control(tc_str, speed_info):
             if base >= 180: return 'Blitz';
             if base > 0 : return 'Bullet';
             return 'Unknown'
-        except ValueError:
-            tc_lower = tc_str.lower()
-            if 'classical' in tc_lower: return 'Classical'
-            if 'rapid' in tc_lower: return 'Rapid'
-            if 'blitz' in tc_lower: return 'Blitz'
-            if 'bullet' in tc_lower: return 'Bullet'
-            return 'Unknown'
+        except ValueError: return 'Unknown' # Reduced fallback keywords as speed info is primary
 
 # =============================================
-# API Data Loading and Processing Function (Now accepts perf_types list)
+# API Data Loading and Processing Function (Now accepts single perf_type string)
 # =============================================
-@st.cache_data(ttl=3600) # Cache based on username, time_period, perf_types, rated
-def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[str], rated: bool):
-    """ Fetches and processes Lichess games with enhanced error logging. """
-    if not username:
-        st.warning("Please enter a Lichess username.")
-        return pd.DataFrame()
-    if not perf_types:
-        st.warning("Please select at least one game type (Perf Type).")
-        return pd.DataFrame()
+@st.cache_data(ttl=3600) # Cache based on username, time_period, perf_type, rated
+def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, rated: bool):
+    """ Fetches and processes Lichess games for a specific performance type. """
+    if not username: st.warning("Please enter a Lichess username."); return pd.DataFrame()
+    if not perf_type: st.warning("Please select a game type."); return pd.DataFrame()
 
     username_lower = username.lower()
-    # Display selected perf types in the info message
-    perf_types_str = ", ".join(perf_types)
-    st.info(f"Fetching games for '{username}' ({time_period_key} | Types: {perf_types_str})...")
+    # Display selected perf type in the info message
+    st.info(f"Fetching games for '{username}' ({time_period_key} | Type: {perf_type})...")
 
     since_timestamp_ms = None
-    time_delta = TIME_PERIOD_OPTIONS.get(time_period_key)
+    time_delta = TIME_PERIOD_OPTIONS.get(time_period_key) # Can be None if key removed, handle this later if needed
     if time_delta:
         start_date = datetime.now(timezone.utc) - time_delta
         since_timestamp_ms = int(start_date.timestamp() * 1000)
         st.caption(f"Fetching games since: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    else:
-        st.caption("Fetching all games for the selected period...")
+    # No "All Time" caption needed anymore
 
-    # --- Prepare API Parameters (using selected perf_types) ---
+    # --- Prepare API Parameters (using single perf_type) ---
     api_params = {
         "rated": str(rated).lower(),
-        "perfType": ",".join(perf_types).lower(), # Use the provided list
+        "perfType": perf_type.lower(), # Pass the single type directly
         "opening": "true", "moves": "false", "tags": "false", "pgnInJson": "false",
     }
     if since_timestamp_ms: api_params["since"] = since_timestamp_ms
@@ -120,11 +105,11 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
     games_processed_for_log = 0
 
     try:
-        with st.spinner(f"Calling Lichess API for {username}... (Processing stream...)"):
+        with st.spinner(f"Calling Lichess API for {username} ({perf_type} games)..."):
             response = requests.get(api_url, params=api_params, headers=headers, stream=True)
             response.raise_for_status()
 
-            st.write("DEBUG: Starting to process game data stream...") # Keep for debug if needed
+            # st.write("DEBUG: Starting to process game data stream...") # Keep minimal logs now
             for line in response.iter_lines():
                 if line:
                     game_data_raw = line.decode('utf-8')
@@ -134,6 +119,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
                         game_data = json.loads(game_data_raw)
 
                         # --- Start Data Extraction (Robust) ---
+                        # (Extraction logic remains largely the same as v3)
                         white_player_info = game_data.get('players', {}).get('white', {})
                         black_player_info = game_data.get('players', {}).get('black', {})
                         white_user = white_player_info.get('user', {}) if white_player_info else {}
@@ -148,7 +134,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
 
                         variant = game_data.get('variant', 'standard')
                         speed = game_data.get('speed', 'unknown')
-                        perf = game_data.get('perf', 'unknown') # This field directly gives the perf type
+                        perf = game_data.get('perf', 'unknown') # Actual perf type from game data
                         status = game_data.get('status', 'unknown')
                         winner = game_data.get('winner')
 
@@ -194,6 +180,10 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
                         opp_name_clean = clean_name(opp_name_raw)
                         # --- End Data Extraction ---
 
+                        # Filter by perf type again just to be sure (API might sometimes include others?)
+                        # Or rely solely on API filter which should be sufficient
+                        # if perf != perf_type.lower(): continue # Optional strict check
+
                         game_processed_data = {
                             'Date': game_date, 'Event': perf, 'White': white_name, 'Black': black_name,
                             'Result': "1-0" if winner=='white' else ("0-1" if winner=='black' else "1/2-1/2"),
@@ -205,21 +195,15 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
                             'OpponentName': opp_name_clean, 'OpponentNameRaw': opp_name_raw,
                             'OpponentElo': int(opp_elo), 'OpponentTitle': opp_title_final,
                             'PlayerResultNumeric': res_num, 'PlayerResultString': res_str,
-                            'Variant': variant, 'Speed': speed, 'Status': status, 'PerfType': perf # Store the perf type
+                            'Variant': variant, 'Speed': speed, 'Status': status, 'PerfType': perf
                         }
                         all_games_data.append(game_processed_data)
                         processed_game_counter += 1
 
-                    except json.JSONDecodeError as e_json:
-                        error_counter += 1
-                        # if error_counter <= 10: st.warning(f"Skipping line #{games_processed_for_log} (JSON decode error): {e_json}.") # Keep logs minimal
-                    except Exception as e_proc:
-                        error_counter += 1
-                        # if error_counter <= 20: # Keep logs minimal
-                            # st.error(f"Error processing game #{games_processed_for_log} (ID: {game_data.get('id', 'N/A') if game_data else 'N/A'}): {e_proc}")
-                            # st.text(traceback.format_exc())
-                            # if error_counter <= 5 : st.code(game_data_raw, language="json")
-            # st.write(f"DEBUG: Finished processing stream...") # Keep logs minimal
+                    except json.JSONDecodeError as e_json: error_counter += 1
+                    except Exception as e_proc: error_counter += 1
+
+            # st.write(f"DEBUG: Finished processing stream...") # Minimal logs
 
     except requests.exceptions.HTTPError as e_http:
         st.error(f"🚨 API Request Failed: {e_http.response.status_code} ({e_http.response.reason}). Check username or Lichess API status.")
@@ -229,24 +213,24 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
         return pd.DataFrame()
     except Exception as e_outer:
          st.error(f"🚨 An unexpected error occurred: {e_outer}")
-         st.text(traceback.format_exc())
+         st.text(traceback.format_exc()) # Still log unexpected errors fully
          return pd.DataFrame()
 
     if error_counter > 0:
-         st.warning(f"Skipped {error_counter} out of {games_processed_for_log} entries due to processing errors.")
+         st.warning(f"Skipped {error_counter} entries due to processing errors during stream.")
 
     if not all_games_data:
-        st.warning(f"No games found for '{username}' matching the criteria (Period: {time_period_key}, Types: {perf_types_str}, Rated: {rated}). Try different settings.")
+        st.warning(f"No games found for '{username}' matching the criteria (Period: {time_period_key}, Type: {perf_type}, Rated: {rated}).")
         return pd.DataFrame()
 
     df = pd.DataFrame(all_games_data)
-    st.success(f"Successfully processed {len(df)} games into DataFrame.")
+    st.success(f"Successfully processed {len(df)} games.")
 
     # --- Final Feature Engineering ---
     if not df.empty:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         df = df.dropna(subset=['Date'])
-        if df.empty: return df # Return empty if all dates invalid
+        if df.empty: return df
 
         df['Year'] = df['Date'].dt.year
         df['Month'] = df['Date'].dt.month
@@ -254,23 +238,19 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
         df['PlayerElo'] = df['PlayerElo'].astype(int)
         df['OpponentElo'] = df['OpponentElo'].astype(int)
         df['EloDiff'] = df['PlayerElo'] - df['OpponentElo']
-
-        # Use the helper function for TimeControl_Category
         df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1)
-
         df = df.rename(columns={'Opening': 'OpeningName'})
         df = df.sort_values(by='Date').reset_index(drop=True)
 
-    # st.write(f"DEBUG: Returning DataFrame with {len(df)} rows.") # Keep logs minimal
     return df
 # === End of load_from_lichess_api function ===
 
 
 # =============================================
-# Plotting Functions (Assumed Correct)
+# Plotting Functions (Assumed Correct - Same as v3)
 # =============================================
-# (Insert ALL plotting functions here - plot_win_loss_pie, plot_win_loss_by_color, ...)
-# ... (Code for plotting functions remains the same as previous version) ...
+# (Insert ALL plotting functions here - plot_win_loss_pie, plot_win_loss_by_color, etc.)
+# ... (Code is identical to the previous version) ...
 def plot_win_loss_pie(df, display_name):
     if 'PlayerResultString' not in df.columns: return go.Figure()
     result_counts = df['PlayerResultString'].value_counts()
@@ -301,19 +281,14 @@ def plot_win_loss_by_color(df):
         return go.Figure().update_layout(title="Error generating plot")
 
 def plot_rating_trend(df, display_name):
-    # Uses 'PlayerElo' which should be int after processing
     if not all(col in df.columns for col in ['Date', 'PlayerElo']): return go.Figure()
     df_plot = df.copy()
-    # Ensure PlayerElo is treated as numeric, handle potential non-numeric values just in case
     df_plot['PlayerElo'] = pd.to_numeric(df_plot['PlayerElo'], errors='coerce')
     df_sorted = df_plot[df_plot['PlayerElo'].notna() & (df_plot['PlayerElo'] > 0)].sort_values('Date')
     if df_sorted.empty: return go.Figure().update_layout(title=f"No valid Elo data for {display_name}")
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df_sorted['Date'], y=df_sorted['PlayerElo'], mode='lines+markers', name='Elo Rating',
                         line=dict(color='#1E88E5', width=2), marker=dict(color='#1E88E5', size=5, opacity=0.7), hoverinfo='x+y'))
-    # Add opponent Elo for context? Optional.
-    # if 'OpponentElo' in df_sorted.columns:
-    #      fig.add_trace(go.Scatter(x=df_sorted['Date'], y=df_sorted['OpponentElo'], mode='lines', name='Opponent Elo', line=dict(color='grey', dash='dot')))
     fig.update_layout(title=f'{display_name}\'s Rating Trend Over Time', xaxis_title='Date', yaxis_title='Elo Rating',
                       hovermode="x unified", xaxis_rangeslider_visible=True)
     return fig
@@ -342,7 +317,7 @@ def plot_win_rate_per_year(df):
     wins_per_year = df[df['PlayerResultNumeric'] == 1].groupby('Year').size()
     total_per_year = df.groupby('Year').size()
     win_rate = (wins_per_year.reindex(total_per_year.index, fill_value=0) / total_per_year).fillna(0) * 100
-    win_rate.index = win_rate.index.astype(str) # Ensure year is string for plotting
+    win_rate.index = win_rate.index.astype(str)
     fig = px.line(win_rate, x=win_rate.index, y=win_rate.values, title='Win Rate (%) Per Year', markers=True,
                   labels={'x': 'Year', 'y': 'Win Rate (%)'})
     fig.update_traces(line_color='#FFC107', line_width=2.5)
@@ -376,7 +351,6 @@ def plot_performance_by_time_control(df):
 
 def plot_opening_frequency(df, top_n=20):
     if 'OpeningName' not in df.columns: return go.Figure()
-    # Use the renamed 'OpeningName' column
     opening_counts = df[df['OpeningName'] != 'Unknown Opening']['OpeningName'].value_counts().nlargest(top_n)
     fig = px.bar(opening_counts, y=opening_counts.index, x=opening_counts.values, orientation='h',
                  title=f'Top {top_n} Most Frequent Openings Played', labels={'y': 'Opening Name', 'x': 'Number of Games'}, text=opening_counts.values)
@@ -425,25 +399,26 @@ def filter_and_analyze_time_forfeits(df):
     return tf_games, wins_tf, losses_tf
 
 # =============================================
-# Streamlit App Layout - API Version with Perf Type Selection
+# Streamlit App Layout - API Version with Single Perf Type Select
 # =============================================
 
 st.title("♟️ Lichess Insights")
-st.write("Analyze chess game statistics directly from Lichess API.")
+st.write("Analyze rated game statistics from the Lichess API.")
 
 # --- Input Area ---
-# Use columns for better layout
-col1, col2, col3 = st.columns([2, 1, 2]) # Add a column for Perf Type
+col1, col2, col3 = st.columns([2, 1, 1]) # Adjusted column ratios
 with col1:
     lichess_username = st.text_input("Lichess Username:", key="username_input", placeholder="e.g., DrNykterstein")
 with col2:
-    time_period = st.selectbox("Time Period:", options=list(TIME_PERIOD_OPTIONS.keys()), index=list(TIME_PERIOD_OPTIONS.keys()).index(DEFAULT_TIME_PERIOD), key="time_period_select")
+    time_period = st.selectbox("Time Period:", options=list(TIME_PERIOD_OPTIONS.keys()), # Use updated options
+                               index=list(TIME_PERIOD_OPTIONS.keys()).index(DEFAULT_TIME_PERIOD) if DEFAULT_TIME_PERIOD in TIME_PERIOD_OPTIONS else 0, # Handle if default removed
+                               key="time_period_select")
 with col3:
-    # Use multiselect for performance types
-    selected_perf_types = st.multiselect(
-        "Game Types (Perf Types):",
-        options=PERF_TYPE_OPTIONS,
-        default=DEFAULT_PERF_SELECTION, # Default to Bullet as requested
+    # Use selectbox for single performance type selection
+    selected_perf_type = st.selectbox(
+        "Game Type:",
+        options=PERF_TYPE_OPTIONS_SINGLE, # Use limited options
+        index=PERF_TYPE_OPTIONS_SINGLE.index(DEFAULT_PERF_TYPE), # Default to Bullet
         key="perf_type_select"
     )
 
@@ -453,45 +428,35 @@ analyze_button = st.button("Analyze Games", key="analyze_button")
 if 'analysis_df' not in st.session_state: st.session_state.analysis_df = None
 if 'current_username' not in st.session_state: st.session_state.current_username = ""
 if 'current_time_period' not in st.session_state: st.session_state.current_time_period = ""
-# Add state for performance types
-if 'current_perf_types' not in st.session_state: st.session_state.current_perf_types = []
+# Add state for single performance type
+if 'current_perf_type' not in st.session_state: st.session_state.current_perf_type = ""
 
 if analyze_button and lichess_username:
     # Check if any input has changed
     if (lichess_username != st.session_state.current_username or
             time_period != st.session_state.current_time_period or
-            # Compare sets for order-independent comparison of selected types
-            set(selected_perf_types) != set(st.session_state.current_perf_types)):
+            selected_perf_type != st.session_state.current_perf_type): # Compare single string
 
-        if not selected_perf_types:
-             st.warning("Please select at least one game type to analyze.")
+        if not selected_perf_type:
+             st.warning("Internal error: No game type selected.") # Should not happen with selectbox
         else:
-            # --- DEBUG Lines before calling API ---
-            # st.write(f"DEBUG: Analyze button clicked. New analysis needed.")
-            # st.write(f"DEBUG: Calling API with User: '{lichess_username}', Period: '{time_period}', Types: {selected_perf_types}")
-            # ---
-
-            st.session_state.analysis_df = None # Clear old df
+            # st.write("DEBUG: Analyze button clicked. New analysis needed.") # Keep logs minimal now
+            st.session_state.analysis_df = None
             if 'selected_section' in st.session_state: del st.session_state['selected_section']
 
-            # Pass the selected perf types to the API function
+            # Pass the single selected perf type to the API function
             df_loaded = load_from_lichess_api(
                 lichess_username,
                 time_period,
-                selected_perf_types, # Pass the selected list
+                selected_perf_type, # Pass the single string
                 DEFAULT_RATED_ONLY
             )
-
-            # --- DEBUG Lines after calling API ---
-            # st.write(f"DEBUG: load_from_lichess_api returned: {type(df_loaded)}")
-            # if isinstance(df_loaded, pd.DataFrame): st.write(f"DEBUG: DataFrame empty: {df_loaded.empty}")
-            # ---
 
             st.session_state.analysis_df = df_loaded
             st.session_state.current_username = lichess_username
             st.session_state.current_time_period = time_period
-            st.session_state.current_perf_types = selected_perf_types # Store selected types
-            st.rerun() # Re-enable rerun for cleaner UI
+            st.session_state.current_perf_type = selected_perf_type # Store selected type string
+            st.rerun() # Rerun to display results/errors cleanly
 
     else:
         st.info("Analysis results for these settings are already displayed.")
@@ -501,11 +466,11 @@ if analyze_button and lichess_username:
 if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_state.analysis_df.empty:
     df = st.session_state.analysis_df
     current_display_name = st.session_state.current_username
-    current_perf_types_str = ", ".join(st.session_state.current_perf_types) # Get types from state
+    current_perf_type = st.session_state.current_perf_type # Get type from state
 
     st.success(f"Displaying analysis for **{current_display_name}** ({st.session_state.current_time_period})")
-    # Include selected perf types in the caption
-    st.caption(f"Total Rated Games Analyzed ({current_perf_types_str}): **{len(df):,}**")
+    # Update caption to show single selected perf type
+    st.caption(f"Game Type: **{current_perf_type.capitalize()}** | Total Rated Games Analyzed: **{len(df):,}**")
     st.markdown("---")
 
     st.sidebar.title("📊 Analysis Sections")
@@ -517,7 +482,7 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
     st.session_state.selected_section = selected_section
 
     # --- Display Content Based on Selected Section ---
-    # (The plotting sections remain unchanged as they operate on the final df)
+    # (Plotting sections remain the same)
     if selected_section == "Overview":
         st.header("📈 General Overview")
         col_ov1, col_ov2 = st.columns(2);
@@ -568,6 +533,7 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         if not gm_games.empty:
             st.success(f"Found **{len(gm_games):,}** games vs 'GM'. Analyzing subset...")
             tab_gm1, tab_gm2, tab_gm3, tab_gm4 = st.tabs(["🏆 Summary", "📈 Rating Trend", "📖 Openings", "👥 Opponents"])
+            # ... (Code inside GM tabs remains the same) ...
             with tab_gm1:
                  st.plotly_chart(plot_win_loss_pie(gm_games, f"{current_display_name} vs GMs"), use_container_width=True)
                  st.markdown("#### Results vs GMs:"); st.dataframe(gm_games['PlayerResultString'].value_counts().reset_index(name='Count'))
@@ -580,6 +546,7 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
             with tab_gm4:
                 st.plotly_chart(plot_most_frequent_opponents(gm_games, top_n=15), use_container_width=True)
                 st.markdown("#### Frequent GM Opponents:"); st.dataframe(gm_games['OpponentName'].value_counts().reset_index(name='Games').head(15))
+
         else: st.warning("ℹ️ No games found vs 'GM' title.")
 
     elif selected_section == "Time Forfeit Analysis":
@@ -598,9 +565,8 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
     st.sidebar.info(f"Analysis for {current_display_name}. Using Lichess API.")
 
 elif not analyze_button and st.session_state.analysis_df is None:
-     st.info("☝️ Enter Lichess username, select time period & game types, then click 'Analyze Games'.")
-# Display warning if analysis ran but no data was generated (e.g., API returned empty or all games skipped)
+     st.info("☝️ Enter Lichess username, select period & game type, then click 'Analyze Games'.")
 elif analyze_button and (not isinstance(st.session_state.analysis_df, pd.DataFrame) or st.session_state.analysis_df.empty):
-     st.warning("No analysis data generated based on the current settings. Check username or try different period/game types. Review logs/errors above if any.")
+     st.warning("No analysis data generated. Check username or try different settings. Review logs if errors occurred.")
 
 # --- End of App ---
