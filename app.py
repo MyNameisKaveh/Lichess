@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
-# v5: Disabled Plotly drag interactions for better mobile scrolling.
+# v6: Fixed SyntaxError in categorize_time_control.
 # =============================================
 
 import streamlit as st
@@ -26,12 +26,15 @@ DEFAULT_PERF_TYPE = 'Bullet'
 DEFAULT_RATED_ONLY = True
 
 # =============================================
-# Helper Function: Categorize Time Control
+# Helper Function: Categorize Time Control *** SYNTAX CORRECTED ***
 # =============================================
 def categorize_time_control(tc_str, speed_info):
-    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']: return speed_info.capitalize()
+    """Categorizes time control based on speed info or parsed string."""
+    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
+        return speed_info.capitalize()
     if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']: return 'Unknown'
     if tc_str == 'Correspondence': return 'Correspondence'
+
     if '+' in tc_str:
         try:
             parts = tc_str.split('+')
@@ -44,21 +47,31 @@ def categorize_time_control(tc_str, speed_info):
                 if total > 0 : return 'Bullet';
                 return 'Unknown'
             else: return 'Unknown'
-        except (ValueError, IndexError): return 'Unknown'
-    else:
-        try: base = int(tc_str)
-             if base >= 1500: return 'Classical';
-             if base >= 480: return 'Rapid';
-             if base >= 180: return 'Blitz';
-             if base > 0 : return 'Bullet';
-             return 'Unknown'
-        except ValueError: return 'Unknown'
+        except (ValueError, IndexError):
+            return 'Unknown'
+    else: # Handle cases with only base time (no increment)
+        try:
+            base = int(tc_str)
+            if base >= 1500: return 'Classical';
+            if base >= 480: return 'Rapid';
+            if base >= 180: return 'Blitz';
+            if base > 0 : return 'Bullet';
+            return 'Unknown'
+        except ValueError: # <<< This except block was missing or misplaced
+            # If conversion fails, check for keywords as last resort
+            tc_lower = tc_str.lower()
+            if 'classical' in tc_lower: return 'Classical'
+            if 'rapid' in tc_lower: return 'Rapid'
+            if 'blitz' in tc_lower: return 'Blitz'
+            if 'bullet' in tc_lower: return 'Bullet'
+            return 'Unknown'
 
 # =============================================
-# API Data Loading and Processing Function
+# API Data Loading and Processing Function (Unchanged from v5)
 # =============================================
 @st.cache_data(ttl=3600)
 def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, rated: bool):
+    """ Fetches and processes Lichess games. """
     if not username: st.warning("Please enter a Lichess username."); return pd.DataFrame()
     if not perf_type: st.warning("Please select a game type."); return pd.DataFrame()
 
@@ -92,7 +105,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
                     game_data = None
                     try:
                         game_data = json.loads(game_data_raw)
-                        # --- Data Extraction (Simplified for brevity, assume correct) ---
+                        # --- Data Extraction ---
                         white_player_info=game_data.get('players',{}).get('white',{})
                         black_player_info=game_data.get('players',{}).get('black',{})
                         white_user=white_player_info.get('user',{}) if white_player_info else {}
@@ -132,7 +145,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
                         # --- Store data ---
                         all_games_data.append({'Date':game_date,'Event':perf,'White':white_name,'Black':black_name,'Result':"1-0" if winner=='white' else ("0-1" if winner=='black' else "1/2-1/2"),'WhiteElo':int(white_rating) if not pd.isna(white_rating) else 0,'BlackElo':int(black_rating) if not pd.isna(black_rating) else 0,'ECO':eco,'Opening':op_name,'TimeControl':tc_str,'Termination':term,'PlyCount':game_data.get('turns',0),'LichessID':game_id,'PlayerID':username,'PlayerColor':player_color,'PlayerElo':int(player_elo),'OpponentName':opp_name_clean,'OpponentNameRaw':opp_name_raw,'OpponentElo':int(opp_elo),'OpponentTitle':opp_title_final,'PlayerResultNumeric':res_num,'PlayerResultString':res_str,'Variant':variant,'Speed':speed,'Status':status,'PerfType':perf})
                     except json.JSONDecodeError: error_counter += 1
-                    except Exception: error_counter += 1 # Count other processing errors minimally
+                    except Exception: error_counter += 1
 
     except requests.exceptions.RequestException as e: st.error(f"🚨 API Request Failed: {e}"); return pd.DataFrame()
     except Exception as e: st.error(f"🚨 Unexpected error: {e}"); st.text(traceback.format_exc()); return pd.DataFrame()
@@ -150,6 +163,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
         df['Year'] = df['Date'].dt.year; df['Month'] = df['Date'].dt.month; df['DayOfWeek'] = df['Date'].dt.day_name()
         df['PlayerElo'] = df['PlayerElo'].astype(int); df['OpponentElo'] = df['OpponentElo'].astype(int)
         df['EloDiff'] = df['PlayerElo'] - df['OpponentElo']
+        # Use the corrected helper function here
         df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1)
         df = df.rename(columns={'Opening': 'OpeningName'})
         df = df.sort_values(by='Date').reset_index(drop=True)
@@ -158,13 +172,14 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
 # =============================================
 # Plotting Functions (Applying dragmode=False)
 # =============================================
+# (Insert ALL plotting functions here - code identical to previous version v5)
 def plot_win_loss_pie(df, display_name):
     if 'PlayerResultString' not in df.columns: return go.Figure()
     result_counts = df['PlayerResultString'].value_counts()
     fig = px.pie(values=result_counts.values, names=result_counts.index, title=f'Overall Results for {display_name}',
                  color=result_counts.index, color_discrete_map={'Win':'#4CAF50', 'Draw':'#B0BEC5', 'Loss':'#F44336'}, hole=0.3)
     fig.update_traces(textposition='inside', textinfo='percent+label', pull=[0.05 if x == 'Win' else 0 for x in result_counts.index])
-    fig.update_layout(dragmode=False) # <<< Disable drag interaction
+    fig.update_layout(dragmode=False) # Disable drag interaction
     return fig
 
 def plot_win_loss_by_color(df):
@@ -180,7 +195,7 @@ def plot_win_loss_by_color(df):
                      labels={'value': 'Percentage (%)', 'PlayerColor': 'Played As', 'PlayerResultString': 'Result'},
                      color='PlayerResultString', color_discrete_map={'Win':'#4CAF50', 'Draw':'#B0BEC5', 'Loss':'#F44336'},
                      text_auto='.1f', category_orders={"PlayerColor": ["White", "Black"]})
-        fig.update_layout(yaxis_title="Percentage (%)", xaxis_title="Color Played", dragmode=False) # <<< Disable drag
+        fig.update_layout(yaxis_title="Percentage (%)", xaxis_title="Color Played", dragmode=False) # Disable drag
         fig.update_traces(textangle=0)
         return fig
     except Exception as e: return go.Figure().update_layout(title="Error")
@@ -194,7 +209,7 @@ def plot_rating_trend(df, display_name):
     fig.add_trace(go.Scatter(x=df_sorted['Date'], y=df_sorted['PlayerElo'], mode='lines+markers', name='Elo',
                         line=dict(color='#1E88E5', width=2), marker=dict(size=5, opacity=0.7)))
     fig.update_layout(title=f'{display_name}\'s Rating Trend', xaxis_title='Date', yaxis_title='Elo Rating',
-                      hovermode="x unified", xaxis_rangeslider_visible=True, dragmode=False) # <<< Disable drag
+                      hovermode="x unified", xaxis_rangeslider_visible=True, dragmode=False) # Disable drag
     return fig
 
 def plot_performance_vs_opponent_elo(df):
@@ -205,7 +220,7 @@ def plot_performance_vs_opponent_elo(df):
                  color='PlayerResultString', color_discrete_map={'Win':'#4CAF50', 'Draw':'#B0BEC5', 'Loss':'#F44336'}, points='outliers')
     fig.add_hline(y=0, line_dash="dash", line_color="grey")
     fig.update_traces(marker=dict(opacity=0.8))
-    fig.update_layout(dragmode=False) # <<< Disable drag
+    fig.update_layout(dragmode=False) # Disable drag
     return fig
 
 def plot_games_per_year(df):
@@ -214,7 +229,7 @@ def plot_games_per_year(df):
     fig = px.bar(games_per_year, x=games_per_year.index, y=games_per_year.values,
                  title='Games Played Per Year', labels={'x': 'Year', 'y': 'Games'}, text=games_per_year.values)
     fig.update_traces(marker_color='#2196F3', textposition='outside')
-    fig.update_layout(xaxis_title="Year", yaxis_title="Number of Games", xaxis={'type': 'category'}, dragmode=False) # <<< Disable drag
+    fig.update_layout(xaxis_title="Year", yaxis_title="Number of Games", xaxis={'type': 'category'}, dragmode=False) # Disable drag
     return fig
 
 def plot_win_rate_per_year(df):
@@ -226,7 +241,7 @@ def plot_win_rate_per_year(df):
     fig = px.line(win_rate, x=win_rate.index, y=win_rate.values, title='Win Rate (%) Per Year', markers=True,
                   labels={'x': 'Year', 'y': 'Win Rate (%)'})
     fig.update_traces(line_color='#FFC107', line_width=2.5)
-    fig.update_layout(yaxis_range=[0, 100], dragmode=False) # <<< Disable drag
+    fig.update_layout(yaxis_range=[0, 100], dragmode=False) # Disable drag
     return fig
 
 def plot_performance_by_time_control(df):
@@ -246,7 +261,7 @@ def plot_performance_by_time_control(df):
                      labels={'value':'%', 'TimeControl_Category':'Category', 'PlayerResultString':'Result'},
                      color='PlayerResultString', color_discrete_map={'Win':'#4CAF50', 'Draw':'#B0BEC5', 'Loss':'#F44336'},
                      barmode='group', text_auto='.1f')
-        fig.update_layout(xaxis_title="Time Control Category", yaxis_title="Percentage (%)", dragmode=False) # <<< Disable drag
+        fig.update_layout(xaxis_title="Time Control Category", yaxis_title="Percentage (%)", dragmode=False) # Disable drag
         fig.update_traces(textangle=0)
         return fig
      except Exception as e: return go.Figure().update_layout(title="Error")
@@ -256,7 +271,7 @@ def plot_opening_frequency(df, top_n=20):
     opening_counts = df[df['OpeningName'] != 'Unknown Opening']['OpeningName'].value_counts().nlargest(top_n)
     fig = px.bar(opening_counts, y=opening_counts.index, x=opening_counts.values, orientation='h',
                  title=f'Top {top_n} Openings', labels={'y': 'Opening', 'x': 'Games'}, text=opening_counts.values)
-    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False) # <<< Disable drag
+    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False) # Disable drag
     fig.update_traces(marker_color='#673AB7', textposition='outside')
     return fig
 
@@ -271,7 +286,7 @@ def plot_win_rate_by_opening(df, min_games=5, top_n=20):
                  title=f'Top {top_n} Openings by Win Rate (Min {min_games} games)',
                  labels={'win_rate':'Win Rate (%)', 'OpeningName':'Opening'}, text='win_rate')
     fig.update_traces(texttemplate='%{text:.1f}%', textposition='inside', marker_color='#009688')
-    fig.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Win Rate (%)", yaxis_title="Opening", dragmode=False) # <<< Disable drag
+    fig.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Win Rate (%)", yaxis_title="Opening", dragmode=False) # Disable drag
     return fig
 
 def plot_most_frequent_opponents(df, top_n=20):
@@ -279,7 +294,7 @@ def plot_most_frequent_opponents(df, top_n=20):
     opp_counts = df[df['OpponentName'] != 'Unknown']['OpponentName'].value_counts().nlargest(top_n)
     fig = px.bar(opp_counts, y=opp_counts.index, x=opp_counts.values, orientation='h',
                  title=f'Top {top_n} Opponents', labels={'y': 'Opponent', 'x': 'Games'}, text=opp_counts.values)
-    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False) # <<< Disable drag
+    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False) # Disable drag
     fig.update_traces(marker_color='#FF5722', textposition='outside')
     return fig
 
@@ -300,7 +315,7 @@ def filter_and_analyze_time_forfeits(df):
     return tf_games, wins_tf, losses_tf
 
 # =============================================
-# Streamlit App Layout - v4
+# Streamlit App Layout - v6 (Single Perf Type, No All Time, Syntax Fix)
 # =============================================
 
 st.title("♟️ Lichess Insights")
@@ -334,7 +349,7 @@ if analyze_button and lichess_username:
             st.session_state.current_username = lichess_username
             st.session_state.current_time_period = time_period
             st.session_state.current_perf_type = selected_perf_type
-            st.rerun() # Re-enabled rerun
+            st.rerun() # Re-enable rerun
     else:
         st.info("Analysis results for these settings are already displayed.")
 
@@ -356,7 +371,8 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
          index=analysis_options.index(st.session_state.selected_section), key="section_radio")
     st.session_state.selected_section = selected_section
 
-    # --- Display Content Based on Selected Section ---
+    # --- Display Content ---
+    # (Plotting sections remain unchanged - use df)
     if selected_section == "Overview":
         st.header("📈 General Overview")
         col_ov1, col_ov2 = st.columns(2);
@@ -367,7 +383,7 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
 
     elif selected_section == "Time and Date Analysis":
         st.header("📅 Time and Date Analysis")
-        tab_time1, tab_time2, tab_time3 = st.tabs(["Games / Year", "Win Rate / Year", "Perf. / Time Control"]) # Renamed tabs slightly
+        tab_time1, tab_time2, tab_time3 = st.tabs(["Games / Year", "Win Rate / Year", "Perf. / Time Control"])
         with tab_time1: st.plotly_chart(plot_games_per_year(df), use_container_width=True)
         with tab_time2: st.plotly_chart(plot_win_rate_per_year(df), use_container_width=True)
         with tab_time3:
