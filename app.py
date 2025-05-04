@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
-# v11: Absolutely final SyntaxError fix in categorize_time_control.
+# v12: Replicated Kaggle notebook structure and plots more closely.
+#      - Linear display within sections (no tabs).
+#      - Added plots for Time Forfeit.
+#      - Ensured Day/Hour plots are included.
+#      - Sidebar inputs & selectbox navigation retained.
 # =============================================
 
 import streamlit as st
@@ -28,69 +32,41 @@ FAMOUS_OPPONENTS = [ "DrNykterstein", "MagnusCarlsen", "Hikaru", "AnishGiri", "F
                      "lachesisQ", "WesleySo", "GMWSO", "VladislavArtemiev", "Duhless", ]
 
 # =============================================
-# Helper Function: Categorize Time Control *** FINAL SYNTAX CORRECTED ***
+# Helper Function: Categorize Time Control (Correct)
 # =============================================
 def categorize_time_control(tc_str, speed_info):
-    """Categorizes time control based on speed info or parsed string."""
-    # Prioritize speed info if available and standard
-    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
-        return speed_info.capitalize()
-
-    # Fallback to parsing the time_control_str
-    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']:
-        return 'Unknown'
-    if tc_str == 'Correspondence':
-        return 'Correspondence'
-
-    # Handle format like "180+2"
+    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']: return speed_info.capitalize()
+    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown','Correspondence']: return 'Unknown' if tc_str!='Correspondence' else 'Correspondence'
     if '+' in tc_str:
-        try: # <<< Outer TRY for the whole '+'-logic parsing
-            parts = tc_str.split('+')
-            if len(parts) != 2: # Ensure exactly two parts after split
-                return 'Unknown'
-
-            # Convert parts to integers
-            base = int(parts[0])
-            increment = int(parts[1])
-
-            # Calculate estimated total time
-            total = base + 40 * increment
-            if total >= 1500: return 'Classical'
-            if total >= 480: return 'Rapid'
-            if total >= 180: return 'Blitz'
-            if total > 0 : return 'Bullet'
-            return 'Unknown'
-
-        except (ValueError, IndexError): # <<< Correctly placed EXCEPT for the outer TRY
-            # Handles errors from split (unlikely with length check), or int() conversion
-            return 'Unknown'
-        # Removed redundant/misplaced except Exception here
-
-    # Handle format like "300" (only base time)
+        try: parts=tc_str.split('+');
+             if len(parts)==2: base=int(parts[0]); increment=int(parts[1]); total=base+40*increment
+             else: return 'Unknown'
+        except(ValueError,IndexError): return 'Unknown'
+        if total>=1500: return 'Classical';
+        if total>=480: return 'Rapid';
+        if total>=180: return 'Blitz';
+        if total>0 : return 'Bullet';
+        return 'Unknown'
     else:
-        try: # <<< TRY block for parsing base time only
-            base = int(tc_str)
-            if base >= 1500: return 'Classical'
-            if base >= 480: return 'Rapid'
-            if base >= 180: return 'Blitz'
-            if base > 0 : return 'Bullet'
-            return 'Unknown'
-
-        except ValueError: # <<< Correctly placed EXCEPT for base time conversion failure
-            # If integer conversion fails, check for keywords
-            tc_lower = tc_str.lower()
-            if 'classical' in tc_lower: return 'Classical'
-            if 'rapid' in tc_lower: return 'Rapid'
-            if 'blitz' in tc_lower: return 'Blitz'
-            if 'bullet' in tc_lower: return 'Bullet'
-            return 'Unknown' # Failed all checks
+        try: base=int(tc_str)
+             if base>=1500: return 'Classical';
+             if base>=480: return 'Rapid';
+             if base>=180: return 'Blitz';
+             if base>0 : return 'Bullet';
+             return 'Unknown'
+        except ValueError: tc_lower=tc_str.lower();
+             if 'classical' in tc_lower: return 'Classical';
+             if 'rapid' in tc_lower: return 'Rapid';
+             if 'blitz' in tc_lower: return 'Blitz';
+             if 'bullet' in tc_lower: return 'Bullet';
+             return 'Unknown'
 
 # =============================================
-# API Data Loading and Processing Function (Unchanged from v10)
+# API Data Loading and Processing Function (Correct)
 # =============================================
 @st.cache_data(ttl=3600)
 def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, rated: bool):
-    # ... (Code identical to version 10 - calls the fixed helper) ...
+    # ... (Identical to version 11) ...
     if not username: st.warning("Please enter a Lichess username."); return pd.DataFrame()
     if not perf_type: st.warning("Please select a game type."); return pd.DataFrame()
     username_lower = username.lower()
@@ -159,15 +135,14 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
         df['DayOfWeekNum'] = df['Date'].dt.dayofweek; df['DayOfWeekName'] = df['Date'].dt.day_name()
         df['PlayerElo'] = df['PlayerElo'].astype(int); df['OpponentElo'] = df['OpponentElo'].astype(int)
         df['EloDiff'] = df['PlayerElo'] - df['OpponentElo']
-        df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1) # Calls corrected func
+        df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1)
         df = df.rename(columns={'Opening': 'OpeningName'}); df = df.sort_values(by='Date').reset_index(drop=True)
     return df
 
 # =============================================
-# Plotting Functions (Unchanged from v8 - dragmode=False applied)
+# Plotting Functions (Including new Time Forfeit plots)
 # =============================================
-# (Insert ALL plotting functions here - plot_win_loss_pie, ..., plot_most_frequent_opponents)
-# ... (Code identical to previous version v8) ...
+# --- Existing Plot Functions (Ensure all have dragmode=False) ---
 def plot_win_loss_pie(df, display_name):
     if 'PlayerResultString' not in df.columns: return go.Figure()
     result_counts = df['PlayerResultString'].value_counts()
@@ -179,176 +154,153 @@ def plot_win_loss_pie(df, display_name):
 
 def plot_win_loss_by_color(df):
     if not all(col in df.columns for col in ['PlayerColor', 'PlayerResultString']): return go.Figure()
-    try:
-        color_results = df.groupby(['PlayerColor', 'PlayerResultString']).size().unstack(fill_value=0)
-        for res in ['Win', 'Draw', 'Loss']:
-            if res not in color_results.columns: color_results[res] = 0
-        color_results = color_results[['Win', 'Draw', 'Loss']]
-        total_per_color = color_results.sum(axis=1)
-        color_results_pct = color_results.apply(lambda x: x * 100 / total_per_color[x.name] if total_per_color[x.name] > 0 else 0, axis=1)
-        fig = px.bar(color_results_pct, barmode='stack', title='Results by Color',
-                     labels={'value': '%', 'PlayerColor': 'Played As', 'PlayerResultString': 'Result'},
-                     color='PlayerResultString', color_discrete_map={'Win':'#4CAF50', 'Draw':'#B0BEC5', 'Loss':'#F44336'},
-                     text_auto='.1f', category_orders={"PlayerColor": ["White", "Black"]})
-        fig.update_layout(yaxis_title="Percentage (%)", xaxis_title="Color Played", dragmode=False)
-        fig.update_traces(textangle=0)
-        return fig
-    except Exception: return go.Figure().update_layout(title="Error")
+    try: color_results=df.groupby(['PlayerColor','PlayerResultString']).size().unstack(fill_value=0)
+    except KeyError: return go.Figure().update_layout(title="Error: Missing Columns")
+    for res in ['Win','Draw','Loss']: color_results[res]=color_results.get(res,0)
+    color_results=color_results[['Win','Draw','Loss']]; total=color_results.sum(axis=1)
+    color_results_pct=color_results.apply(lambda x:x*100/total[x.name] if total[x.name]>0 else 0,axis=1)
+    fig=px.bar(color_results_pct, barmode='stack', title='Results by Color', labels={'value':'%', 'PlayerColor':'Played As'},
+               color='PlayerResultString', color_discrete_map={'Win':'#4CAF50', 'Draw':'#B0BEC5', 'Loss':'#F44336'},
+               text_auto='.1f', category_orders={"PlayerColor":["White","Black"]})
+    fig.update_layout(yaxis_title="Percentage (%)", xaxis_title="Color Played", dragmode=False); fig.update_traces(textangle=0)
+    return fig
 
 def plot_rating_trend(df, display_name):
     if not all(col in df.columns for col in ['Date', 'PlayerElo']): return go.Figure()
-    df_plot = df.copy(); df_plot['PlayerElo'] = pd.to_numeric(df_plot['PlayerElo'], errors='coerce')
-    df_sorted = df_plot[df_plot['PlayerElo'].notna() & (df_plot['PlayerElo'] > 0)].sort_values('Date')
-    if df_sorted.empty: return go.Figure().update_layout(title=f"No Elo data for {display_name}")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_sorted['Date'], y=df_sorted['PlayerElo'], mode='lines+markers', name='Elo',
-                        line=dict(color='#1E88E5', width=2), marker=dict(size=5, opacity=0.7)))
-    fig.update_layout(title=f'{display_name}\'s Rating Trend', xaxis_title='Date', yaxis_title='Elo Rating',
-                      hovermode="x unified", xaxis_rangeslider_visible=True, dragmode=False)
+    df_plot=df.copy(); df_plot['PlayerElo']=pd.to_numeric(df_plot['PlayerElo'],errors='coerce')
+    df_sorted=df_plot[df_plot['PlayerElo'].notna() & (df_plot['PlayerElo']>0)].sort_values('Date')
+    if df_sorted.empty: return go.Figure().update_layout(title=f"No Elo data")
+    fig=go.Figure(); fig.add_trace(go.Scatter(x=df_sorted['Date'], y=df_sorted['PlayerElo'], mode='lines+markers', name='Elo', line=dict(color='#1E88E5',width=2), marker=dict(size=5,opacity=0.7)))
+    fig.update_layout(title=f'{display_name}\'s Rating Trend', xaxis_title='Date', yaxis_title='Elo Rating', hovermode="x unified", xaxis_rangeslider_visible=True, dragmode=False)
     return fig
 
 def plot_performance_vs_opponent_elo(df):
     if not all(col in df.columns for col in ['PlayerResultString', 'EloDiff']): return go.Figure()
-    fig = px.box(df, x='PlayerResultString', y='EloDiff', title='Elo Advantage vs. Result',
-                 labels={'PlayerResultString': 'Result', 'EloDiff': 'Your Elo - Opponent Elo'},
-                 category_orders={"PlayerResultString": ["Win", "Draw", "Loss"]},
-                 color='PlayerResultString', color_discrete_map={'Win':'#4CAF50', 'Draw':'#B0BEC5', 'Loss':'#F44336'}, points='outliers')
-    fig.add_hline(y=0, line_dash="dash", line_color="grey")
-    fig.update_traces(marker=dict(opacity=0.8))
-    fig.update_layout(dragmode=False)
+    fig=px.box(df, x='PlayerResultString', y='EloDiff', title='Elo Advantage vs. Result', labels={'PlayerResultString':'Result', 'EloDiff':'Your Elo - Opponent Elo'}, category_orders={"PlayerResultString":["Win","Draw","Loss"]}, color='PlayerResultString', color_discrete_map={'Win':'#4CAF50','Draw':'#B0BEC5','Loss':'#F44336'}, points='outliers')
+    fig.add_hline(y=0, line_dash="dash", line_color="grey"); fig.update_traces(marker=dict(opacity=0.8)); fig.update_layout(dragmode=False)
     return fig
 
 def plot_games_by_dow(df):
     if 'DayOfWeekName' not in df.columns: return go.Figure()
-    dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    games_by_dow = df['DayOfWeekName'].value_counts().reindex(dow_order, fill_value=0)
-    fig = px.bar(games_by_dow, x=games_by_dow.index, y=games_by_dow.values,
-                 title="Games Played per Day of Week", labels={'x': 'Day of Week', 'y': 'Number of Games'},
-                 text=games_by_dow.values)
-    fig.update_traces(marker_color='#9C27B0', textposition='outside') # Purple
-    fig.update_layout(dragmode=False)
+    dow_order=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    games_by_dow=df['DayOfWeekName'].value_counts().reindex(dow_order, fill_value=0)
+    fig=px.bar(games_by_dow, x=games_by_dow.index, y=games_by_dow.values, title="Games by Day of Week", labels={'x':'Day','y':'Games'}, text=games_by_dow.values)
+    fig.update_traces(marker_color='#9C27B0', textposition='outside'); fig.update_layout(dragmode=False)
     return fig
 
 def plot_winrate_by_dow(df):
     if not all(col in df.columns for col in ['DayOfWeekName', 'PlayerResultNumeric']): return go.Figure()
-    dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    wins_by_dow = df[df['PlayerResultNumeric'] == 1].groupby('DayOfWeekName').size()
-    total_by_dow = df.groupby('DayOfWeekName').size()
-    win_rate = (wins_by_dow.reindex(total_by_dow.index, fill_value=0) / total_by_dow).fillna(0) * 100
-    win_rate = win_rate.reindex(dow_order, fill_value=0) # Ensure correct order
-    fig = px.bar(win_rate, x=win_rate.index, y=win_rate.values,
-                 title="Win Rate (%) per Day of Week", labels={'x': 'Day of Week', 'y': 'Win Rate (%)'},
-                 text=win_rate.values)
-    fig.update_traces(marker_color='#FF9800', texttemplate='%{text:.1f}%', textposition='outside') # Orange
-    fig.update_layout(yaxis_range=[0, 100], dragmode=False)
+    dow_order=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    wins_by_dow=df[df['PlayerResultNumeric']==1].groupby('DayOfWeekName').size(); total_by_dow=df.groupby('DayOfWeekName').size()
+    win_rate=(wins_by_dow.reindex(total_by_dow.index,fill_value=0)/total_by_dow).fillna(0)*100
+    win_rate=win_rate.reindex(dow_order,fill_value=0)
+    fig=px.bar(win_rate, x=win_rate.index, y=win_rate.values, title="Win Rate (%) by Day", labels={'x':'Day','y':'Win Rate (%)'}, text=win_rate.values)
+    fig.update_traces(marker_color='#FF9800', texttemplate='%{text:.1f}%', textposition='outside'); fig.update_layout(yaxis_range=[0,100], dragmode=False)
     return fig
 
 def plot_games_by_hour(df):
     if 'Hour' not in df.columns: return go.Figure()
-    games_by_hour = df['Hour'].value_counts().sort_index()
-    games_by_hour = games_by_hour.reindex(range(24), fill_value=0)
-    fig = px.bar(games_by_hour, x=games_by_hour.index, y=games_by_hour.values,
-                 title="Games Played per Hour of Day (UTC)", labels={'x': 'Hour (UTC)', 'y': 'Number of Games'},
-                 text=games_by_hour.values)
-    fig.update_traces(marker_color='#03A9F4', textposition='outside') # Light Blue
-    fig.update_layout(xaxis=dict(tickmode='linear'), dragmode=False)
+    games_by_hour=df['Hour'].value_counts().sort_index().reindex(range(24),fill_value=0)
+    fig=px.bar(games_by_hour, x=games_by_hour.index, y=games_by_hour.values, title="Games by Hour (UTC)", labels={'x':'Hour','y':'Games'}, text=games_by_hour.values)
+    fig.update_traces(marker_color='#03A9F4', textposition='outside'); fig.update_layout(xaxis=dict(tickmode='linear'), dragmode=False)
     return fig
 
 def plot_winrate_by_hour(df):
     if not all(col in df.columns for col in ['Hour', 'PlayerResultNumeric']): return go.Figure()
-    wins_by_hour = df[df['PlayerResultNumeric'] == 1].groupby('Hour').size()
-    total_by_hour = df.groupby('Hour').size()
-    win_rate = (wins_by_hour.reindex(total_by_hour.index, fill_value=0) / total_by_hour).fillna(0) * 100
-    win_rate = win_rate.reindex(range(24), fill_value=0) # Ensure all 24 hours
-    fig = px.line(win_rate, x=win_rate.index, y=win_rate.values, markers=True,
-                  title="Win Rate (%) per Hour of Day (UTC)", labels={'x': 'Hour (UTC)', 'y': 'Win Rate (%)'})
-    fig.update_traces(line_color='#8BC34A') # Light Green
-    fig.update_layout(yaxis_range=[0, 100], xaxis=dict(tickmode='linear'), dragmode=False)
+    wins_by_hour=df[df['PlayerResultNumeric']==1].groupby('Hour').size(); total_by_hour=df.groupby('Hour').size()
+    win_rate=(wins_by_hour.reindex(total_by_hour.index,fill_value=0)/total_by_hour).fillna(0)*100
+    win_rate=win_rate.reindex(range(24),fill_value=0)
+    fig=px.line(win_rate, x=win_rate.index, y=win_rate.values, markers=True, title="Win Rate (%) by Hour (UTC)", labels={'x':'Hour','y':'Win Rate (%)'})
+    fig.update_traces(line_color='#8BC34A'); fig.update_layout(yaxis_range=[0,100], xaxis=dict(tickmode='linear'), dragmode=False)
     return fig
 
 def plot_games_per_year(df):
     if 'Year' not in df.columns: return go.Figure()
     games_per_year = df['Year'].value_counts().sort_index()
-    fig = px.bar(games_per_year, x=games_per_year.index, y=games_per_year.values,
-                 title='Games Played Per Year', labels={'x': 'Year', 'y': 'Games'}, text=games_per_year.values)
-    fig.update_traces(marker_color='#2196F3', textposition='outside')
-    fig.update_layout(xaxis_title="Year", yaxis_title="Number of Games", xaxis={'type': 'category'}, dragmode=False)
+    fig = px.bar(games_per_year, x=games_per_year.index, y=games_per_year.values, title='Games Per Year', labels={'x':'Year','y':'Games'}, text=games_per_year.values)
+    fig.update_traces(marker_color='#2196F3', textposition='outside'); fig.update_layout(xaxis_title="Year", yaxis_title="Number of Games", xaxis={'type':'category'}, dragmode=False)
     return fig
 
 def plot_win_rate_per_year(df):
     if not all(col in df.columns for col in ['Year', 'PlayerResultNumeric']): return go.Figure()
-    wins_per_year = df[df['PlayerResultNumeric'] == 1].groupby('Year').size()
-    total_per_year = df.groupby('Year').size()
-    win_rate = (wins_per_year.reindex(total_per_year.index, fill_value=0) / total_per_year).fillna(0) * 100
-    win_rate.index = win_rate.index.astype(str)
-    fig = px.line(win_rate, x=win_rate.index, y=win_rate.values, title='Win Rate (%) Per Year', markers=True,
-                  labels={'x': 'Year', 'y': 'Win Rate (%)'})
-    fig.update_traces(line_color='#FFC107', line_width=2.5)
-    fig.update_layout(yaxis_range=[0, 100], dragmode=False)
+    wins_per_year=df[df['PlayerResultNumeric']==1].groupby('Year').size(); total_per_year=df.groupby('Year').size()
+    win_rate=(wins_per_year.reindex(total_per_year.index,fill_value=0)/total_per_year).fillna(0)*100
+    win_rate.index=win_rate.index.astype(str)
+    fig=px.line(win_rate, x=win_rate.index, y=win_rate.values, title='Win Rate (%) Per Year', markers=True, labels={'x':'Year','y':'Win Rate (%)'})
+    fig.update_traces(line_color='#FFC107', line_width=2.5); fig.update_layout(yaxis_range=[0,100], dragmode=False)
     return fig
 
 def plot_performance_by_time_control(df):
      if not all(col in df.columns for col in ['TimeControl_Category', 'PlayerResultString']): return go.Figure()
      try:
         tc_results = df.groupby(['TimeControl_Category', 'PlayerResultString']).size().unstack(fill_value=0)
-        for res in ['Win', 'Draw', 'Loss']:
-            if res not in tc_results.columns: tc_results[res] = 0
-        tc_results = tc_results[['Win', 'Draw', 'Loss']]
-        total_per_tc = tc_results.sum(axis=1)
-        tc_results_pct = tc_results.apply(lambda x: x*100/total_per_tc[x.name] if total_per_tc[x.name]>0 else 0, axis=1)
-        found_categories = df['TimeControl_Category'].unique()
-        cat_order_preferred = ['Bullet', 'Blitz', 'Rapid', 'Classical', 'Correspondence', 'Unknown']
-        cat_order = [c for c in cat_order_preferred if c in found_categories] + [c for c in found_categories if c not in cat_order_preferred]
-        tc_results_pct = tc_results_pct.reindex(index=cat_order).dropna(axis=0, how='all')
-        fig = px.bar(tc_results_pct, title='Performance by Time Control',
-                     labels={'value':'%', 'TimeControl_Category':'Category', 'PlayerResultString':'Result'},
-                     color='PlayerResultString', color_discrete_map={'Win':'#4CAF50', 'Draw':'#B0BEC5', 'Loss':'#F44336'},
-                     barmode='group', text_auto='.1f')
-        fig.update_layout(xaxis_title="Time Control Category", yaxis_title="Percentage (%)", dragmode=False)
-        fig.update_traces(textangle=0)
+        for res in ['Win','Draw','Loss']: tc_results[res]=tc_results.get(res,0)
+        tc_results=tc_results[['Win','Draw','Loss']]; total=tc_results.sum(axis=1)
+        tc_results_pct=tc_results.apply(lambda x:x*100/total[x.name] if total[x.name]>0 else 0, axis=1)
+        found=df['TimeControl_Category'].unique(); pref=['Bullet','Blitz','Rapid','Classical','Correspondence','Unknown']
+        order=[c for c in pref if c in found]+[c for c in found if c not in pref]
+        tc_results_pct=tc_results_pct.reindex(index=order).dropna(axis=0,how='all')
+        fig=px.bar(tc_results_pct, title='Performance by Time Control', labels={'value':'%','TimeControl_Category':'Category'}, color='PlayerResultString', color_discrete_map={'Win':'#4CAF50','Draw':'#B0BEC5','Loss':'#F44336'}, barmode='group', text_auto='.1f')
+        fig.update_layout(xaxis_title="Time Control Category", yaxis_title="Percentage (%)", dragmode=False); fig.update_traces(textangle=0)
         return fig
-     except Exception as e: return go.Figure().update_layout(title="Error")
+     except Exception: return go.Figure().update_layout(title="Error")
 
 def plot_opening_frequency(df, top_n=20):
     if 'OpeningName' not in df.columns: return go.Figure()
-    opening_counts = df[df['OpeningName'] != 'Unknown Opening']['OpeningName'].value_counts().nlargest(top_n)
-    fig = px.bar(opening_counts, y=opening_counts.index, x=opening_counts.values, orientation='h',
-                 title=f'Top {top_n} Openings', labels={'y': 'Opening', 'x': 'Games'}, text=opening_counts.values)
-    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False)
-    fig.update_traces(marker_color='#673AB7', textposition='outside')
+    opening_counts=df[df['OpeningName']!='Unknown Opening']['OpeningName'].value_counts().nlargest(top_n)
+    fig=px.bar(opening_counts, y=opening_counts.index, x=opening_counts.values, orientation='h', title=f'Top {top_n} Openings', labels={'y':'Opening','x':'Games'}, text=opening_counts.values)
+    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False); fig.update_traces(marker_color='#673AB7', textposition='outside')
     return fig
 
 def plot_win_rate_by_opening(df, min_games=5, top_n=20):
     if not all(col in df.columns for col in ['OpeningName', 'PlayerResultNumeric']): return go.Figure()
-    opening_stats = df.groupby('OpeningName').agg(total_games=('PlayerResultNumeric','count'), wins=('PlayerResultNumeric',lambda x:(x==1).sum()))
-    opening_stats = opening_stats[(opening_stats['total_games']>=min_games) & (opening_stats.index!='Unknown Opening')].copy()
-    if opening_stats.empty: return go.Figure().update_layout(title=f"No openings played >= {min_games} times")
-    opening_stats['win_rate'] = (opening_stats['wins'] / opening_stats['total_games']) * 100
-    opening_stats_plot = opening_stats.nlargest(top_n, 'win_rate')
-    fig = px.bar(opening_stats_plot, y=opening_stats_plot.index, x='win_rate', orientation='h',
-                 title=f'Top {top_n} Openings by Win Rate (Min {min_games} games)',
-                 labels={'win_rate':'Win Rate (%)', 'OpeningName':'Opening'}, text='win_rate')
-    fig.update_traces(texttemplate='%{text:.1f}%', textposition='inside', marker_color='#009688')
-    fig.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Win Rate (%)", yaxis_title="Opening", dragmode=False)
+    opening_stats=df.groupby('OpeningName').agg(total_games=('PlayerResultNumeric','count'), wins=('PlayerResultNumeric',lambda x:(x==1).sum()))
+    opening_stats=opening_stats[(opening_stats['total_games']>=min_games)&(opening_stats.index!='Unknown Opening')].copy()
+    if opening_stats.empty: return go.Figure().update_layout(title=f"No openings >= {min_games} games")
+    opening_stats['win_rate']=(opening_stats['wins']/opening_stats['total_games'])*100
+    opening_stats_plot=opening_stats.nlargest(top_n, 'win_rate')
+    fig=px.bar(opening_stats_plot, y=opening_stats_plot.index, x='win_rate', orientation='h', title=f'Top {top_n} Openings by Win Rate (Min {min_games} games)', labels={'win_rate':'Win Rate (%)','OpeningName':'Opening'}, text='win_rate')
+    fig.update_traces(texttemplate='%{text:.1f}%', textposition='inside', marker_color='#009688'); fig.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Win Rate (%)", yaxis_title="Opening", dragmode=False)
     return fig
 
 def plot_most_frequent_opponents(df, top_n=20):
     if 'OpponentName' not in df.columns: return go.Figure()
-    opp_counts = df[df['OpponentName'] != 'Unknown']['OpponentName'].value_counts().nlargest(top_n)
-    fig = px.bar(opp_counts, y=opp_counts.index, x=opp_counts.values, orientation='h',
-                 title=f'Top {top_n} Opponents', labels={'y': 'Opponent', 'x': 'Games'}, text=opp_counts.values)
-    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False)
-    fig.update_traces(marker_color='#FF5722', textposition='outside')
+    opp_counts=df[df['OpponentName']!='Unknown']['OpponentName'].value_counts().nlargest(top_n)
+    fig=px.bar(opp_counts, y=opp_counts.index, x=opp_counts.values, orientation='h', title=f'Top {top_n} Opponents', labels={'y':'Opponent','x':'Games'}, text=opp_counts.values)
+    fig.update_layout(yaxis={'categoryorder':'total ascending'}, dragmode=False); fig.update_traces(marker_color='#FF5722', textposition='outside')
+    return fig
+
+# --- NEW Plotting Functions for Time Forfeit ---
+def plot_time_forfeit_summary(wins_tf, losses_tf):
+    """ Creates a bar chart comparing wins and losses on time. """
+    data = {'Outcome': ['Won on Time', 'Lost on Time'], 'Count': [wins_tf, losses_tf]}
+    df_tf = pd.DataFrame(data)
+    fig = px.bar(df_tf, x='Outcome', y='Count', title="Time Forfeit Summary",
+                 color='Outcome', color_discrete_map={'Won on Time': '#4CAF50', 'Lost on Time': '#F44336'},
+                 text='Count')
+    fig.update_layout(showlegend=False, dragmode=False)
+    fig.update_traces(textposition='outside')
+    return fig
+
+def plot_time_forfeit_by_tc(tf_games_df):
+    """ Creates a bar chart showing time forfeits by Time Control Category. """
+    if 'TimeControl_Category' not in tf_games_df.columns or tf_games_df.empty:
+        return go.Figure().update_layout(title="No Time Forfeit Data by Category")
+    tf_by_tc = tf_games_df['TimeControl_Category'].value_counts()
+    fig = px.bar(tf_by_tc, x=tf_by_tc.index, y=tf_by_tc.values,
+                 title="Time Forfeits by Time Control Category",
+                 labels={'x': 'Time Control Category', 'y': 'Number of Forfeits'},
+                 text=tf_by_tc.values)
+    fig.update_layout(dragmode=False)
+    fig.update_traces(marker_color='#795548', textposition='outside') # Brown color
     return fig
 
 # =============================================
-# Helper Functions
+# Helper Functions (Unchanged)
 # =============================================
-# ... (filter_and_analyze_gms, filter_and_analyze_time_forfeits - unchanged) ...
 def filter_and_analyze_gms(df):
     if 'OpponentTitle' not in df.columns: return pd.DataFrame()
-    gm_games = df[df['OpponentTitle'] == 'GM'].copy()
-    return gm_games
+    gm_games = df[df['OpponentTitle'] == 'GM'].copy(); return gm_games
 
 def filter_and_analyze_time_forfeits(df):
     if 'Termination' not in df.columns: return pd.DataFrame(), 0, 0
@@ -356,16 +308,15 @@ def filter_and_analyze_time_forfeits(df):
     if tf_games.empty: return tf_games, 0, 0
     wins_tf = len(tf_games[tf_games['PlayerResultNumeric'] == 1])
     losses_tf = len(tf_games[tf_games['PlayerResultNumeric'] == 0])
-    return tf_games, wins_tf, losses_tf
+    return tf_games, wins_tf, losses_tf # Return the filtered dataframe too
 
 # =============================================
-# Streamlit App Layout - v11 (Final Syntax Fix in Helper)
+# Streamlit App Layout - v12 (Kaggle Structure Replication)
 # =============================================
 
 # --- Sidebar ---
 st.sidebar.title("⚙️ Settings")
 lichess_username = st.sidebar.text_input("Lichess Username:", key="username_input", placeholder="e.g., DrNykterstein")
-# Use updated TIME_PERIOD_OPTIONS
 time_period = st.sidebar.selectbox("Time Period:", options=list(TIME_PERIOD_OPTIONS.keys()), key="time_period_select")
 selected_perf_type = st.sidebar.selectbox("Game Type:", options=PERF_TYPE_OPTIONS_SINGLE, index=PERF_TYPE_OPTIONS_SINGLE.index(DEFAULT_PERF_TYPE), key="perf_type_select")
 analyze_button = st.sidebar.button("Analyze Games", key="analyze_button", use_container_width=True)
@@ -387,46 +338,80 @@ if analyze_button and lichess_username:
             selected_perf_type != st.session_state.current_perf_type):
         if not selected_perf_type: st.warning("Please select a game type.")
         else:
-            st.session_state.analysis_df = None
-            if 'selected_section' in st.session_state: del st.session_state['selected_section']
+            st.session_state.analysis_df = None; st.session_state.selected_section = "Overview" # Reset section
             df_loaded = load_from_lichess_api(lichess_username, time_period, selected_perf_type, DEFAULT_RATED_ONLY)
-            st.session_state.analysis_df = df_loaded
-            st.session_state.current_username = lichess_username
-            st.session_state.current_time_period = time_period
-            st.session_state.current_perf_type = selected_perf_type
+            st.session_state.analysis_df = df_loaded; st.session_state.current_username = lichess_username
+            st.session_state.current_time_period = time_period; st.session_state.current_perf_type = selected_perf_type
             st.rerun()
-    else:
-        st.sidebar.info("Settings haven't changed.")
+    else: st.sidebar.info("Settings unchanged.")
 
 
 # --- Display Area ---
-# (Code identical to previous version v10)
 if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_state.analysis_df.empty:
     df = st.session_state.analysis_df
     current_display_name = st.session_state.current_username
     current_perf_type = st.session_state.current_perf_type
+
     st.write(f"Analysis for **{current_display_name}** | Period: **{st.session_state.current_time_period}** | Type: **{current_perf_type.capitalize()}**")
-    st.caption(f"Total Rated Games Analyzed: **{len(df):,}**")
-    st.markdown("---")
+    st.caption(f"Total Rated Games Analyzed: **{len(df):,}**"); st.markdown("---")
+
+    # --- Sidebar Navigation (Selectbox) ---
     st.sidebar.title("📊 Analysis Sections")
-    analysis_options = [ "Overview", "Time & Date Analysis", "ECO & Opening Analysis", "Opponent Analysis",
-                         "Games against GMs", "Famous Opponent Analysis", "Time Forfeit Analysis" ]
-    if 'selected_section' not in st.session_state: st.session_state.selected_section = "Overview"
+    analysis_options = [ # Structure based on re-reading Kaggle NB
+        "1. Overview & General Stats",
+        "2. Performance Over Time",
+        "3. Performance by Color",
+        "4. Time & Date Analysis", # DOW / Hour
+        "5. ECO & Opening Analysis",
+        "6. Opponent Analysis",
+        "7. Games against GMs",
+        "8. Famous Opponent Analysis",
+        "9. Termination Analysis" # Renamed to include TF plots
+    ]
+    # Initialize or get selected section from state
+    if 'selected_section' not in st.session_state: st.session_state.selected_section = analysis_options[0]
+    # Ensure the current selection is valid, otherwise default
+    if st.session_state.selected_section not in analysis_options: st.session_state.selected_section = analysis_options[0]
+
     selected_section = st.sidebar.selectbox( "Choose section:", analysis_options,
          index=analysis_options.index(st.session_state.selected_section), key="section_select")
-    st.session_state.selected_section = selected_section
-    if selected_section == "Overview":
-        st.header("📈 General Overview")
-        col_ov1, col_ov2 = st.columns(2);
-        with col_ov1: st.plotly_chart(plot_win_loss_pie(df, current_display_name), use_container_width=True)
-        with col_ov2: st.plotly_chart(plot_win_loss_by_color(df), use_container_width=True)
+    st.session_state.selected_section = selected_section # Update state
+
+
+    # --- Display Content Sequentially based on Selected Section ---
+    st.header(selected_section) # Display the selected section header
+
+    # --- 1. Overview & General Stats ---
+    if selected_section == analysis_options[0]:
+        st.plotly_chart(plot_win_loss_pie(df, current_display_name), use_container_width=True)
+        # Add other key stats maybe as metrics?
+        total_games = len(df)
+        wins = len(df[df['PlayerResultNumeric'] == 1])
+        losses = len(df[df['PlayerResultNumeric'] == 0])
+        draws = len(df[df['PlayerResultNumeric'] == 0.5])
+        win_rate = (wins / total_games * 100) if total_games > 0 else 0
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Games", f"{total_games:,}")
+        col2.metric("Win Rate", f"{win_rate:.1f}%")
+        col3.metric("Wins | Losses | Draws", f"{wins} | {losses} | {draws}")
+        # Add Avg Opponent Elo?
+        avg_opp_elo = df['OpponentElo'].mean()
+        col4.metric("Avg Opponent Elo", f"{avg_opp_elo:.0f}" if avg_opp_elo else "N/A")
+
+
+    # --- 2. Performance Over Time ---
+    elif selected_section == analysis_options[1]:
         st.plotly_chart(plot_rating_trend(df, current_display_name), use_container_width=True)
-        st.plotly_chart(plot_performance_vs_opponent_elo(df), use_container_width=True)
-    elif selected_section == "Time & Date Analysis":
-        st.header("📅 Time & Date Analysis")
         st.plotly_chart(plot_games_per_year(df), use_container_width=True)
         st.plotly_chart(plot_win_rate_per_year(df), use_container_width=True)
-        st.plotly_chart(plot_performance_by_time_control(df), use_container_width=True)
+
+    # --- 3. Performance by Color ---
+    elif selected_section == analysis_options[2]:
+         st.plotly_chart(plot_win_loss_by_color(df), use_container_width=True)
+         # Maybe split data by color and show rating trend for each? (Optional)
+
+    # --- 4. Time & Date Analysis ---
+    elif selected_section == analysis_options[3]:
         st.subheader("Performance by Day of Week")
         col_dow1, col_dow2 = st.columns(2)
         with col_dow1: st.plotly_chart(plot_games_by_dow(df), use_container_width=True)
@@ -435,23 +420,31 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         col_hod1, col_hod2 = st.columns(2)
         with col_hod1: st.plotly_chart(plot_games_by_hour(df), use_container_width=True)
         with col_hod2: st.plotly_chart(plot_winrate_by_hour(df), use_container_width=True)
-    elif selected_section == "ECO & Opening Analysis":
-        st.header("📖 ECO & Opening Analysis")
-        n_openings = st.slider("Num top openings:", 5, 50, 20, key="n_openings_freq_eco")
-        st.plotly_chart(plot_opening_frequency(df, top_n=n_openings), use_container_width=True)
-        min_games_opening = st.slider("Min games for perf.:", 1, 25, 5, key="min_games_perf_eco")
+
+    # --- 5. ECO & Opening Analysis ---
+    elif selected_section == analysis_options[4]:
+        st.subheader("Opening Frequency")
+        n_openings_freq = st.slider("Num top openings:", 5, 50, 20, key="n_openings_freq_eco")
+        st.plotly_chart(plot_opening_frequency(df, top_n=n_openings_freq), use_container_width=True)
+        st.subheader("Opening Performance")
+        min_games_perf = st.slider("Min games for perf.:", 1, 25, 5, key="min_games_perf_eco")
         n_openings_perf = st.slider("Num openings by win rate:", 5, 50, 20, key="n_openings_perf_eco")
-        st.plotly_chart(plot_win_rate_by_opening(df, min_games=min_games_opening, top_n=n_openings_perf), use_container_width=True)
-    elif selected_section == "Opponent Analysis":
-        st.header("👥 Opponent Analysis")
-        n_opponents = st.slider("Num top opponents:", 5, 50, 20, key="n_opponents_freq_opp")
-        st.plotly_chart(plot_most_frequent_opponents(df, top_n=n_opponents), use_container_width=True)
-        st.plotly_chart(plot_performance_vs_opponent_elo(df), use_container_width=True)
-        st.markdown(f"#### Top {n_opponents} Opponents List")
-        try: st.dataframe(df[df['OpponentName'] != 'Unknown']['OpponentName'].value_counts().reset_index(name='Games').head(n_opponents))
+        st.plotly_chart(plot_win_rate_by_opening(df, min_games=min_games_perf, top_n=n_openings_perf), use_container_width=True)
+
+    # --- 6. Opponent Analysis ---
+    elif selected_section == analysis_options[5]:
+        st.subheader("Frequent Opponents")
+        n_opponents_freq = st.slider("Num top opponents:", 5, 50, 20, key="n_opponents_freq_opp")
+        st.plotly_chart(plot_most_frequent_opponents(df, top_n=n_opponents_freq), use_container_width=True)
+        st.markdown(f"#### Top {n_opponents_freq} Opponents List")
+        try: st.dataframe(df[df['OpponentName'] != 'Unknown']['OpponentName'].value_counts().reset_index(name='Games').head(n_opponents_freq))
         except KeyError: st.warning("Could not generate table.")
-    elif selected_section == "Games against GMs":
-        st.header("👑 Analysis Against Grandmasters (GMs)")
+        st.subheader("Performance vs Opponent Elo")
+        st.plotly_chart(plot_performance_vs_opponent_elo(df), use_container_width=True)
+
+
+    # --- 7. Games against GMs ---
+    elif selected_section == analysis_options[6]:
         gm_games = filter_and_analyze_gms(df)
         if not gm_games.empty:
             st.success(f"Found **{len(gm_games):,}** games vs 'GM'. Analyzing subset...")
@@ -459,36 +452,52 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
             st.plotly_chart(plot_win_loss_by_color(gm_games), use_container_width=True)
             st.plotly_chart(plot_rating_trend(gm_games, f"{current_display_name} (vs GMs)"), use_container_width=True)
             st.plotly_chart(plot_opening_frequency(gm_games, top_n=15), use_container_width=True)
-            min_games_gm = st.slider("Min games (GM opening):", 1, 10, 3, key="gm_open_slider")
+            min_games_gm = st.slider("Min games (GM opening):", 1, 10, 3, key="gm_open_slider_gm")
             st.plotly_chart(plot_win_rate_by_opening(gm_games, min_games=min_games_gm, top_n=15), use_container_width=True)
             st.plotly_chart(plot_most_frequent_opponents(gm_games, top_n=15), use_container_width=True)
             st.markdown("#### Frequent GM Opponents List:")
             st.dataframe(gm_games['OpponentName'].value_counts().reset_index(name='Games').head(15))
         else: st.warning("ℹ️ No games found vs 'GM' title.")
-    elif selected_section == "Famous Opponent Analysis":
-        st.header("🌟 Analysis Against Famous Opponents")
+
+    # --- 8. Famous Opponent Analysis ---
+    elif selected_section == analysis_options[7]:
         st.caption(f"Comparing against: {', '.join(FAMOUS_OPPONENTS)}")
         famous_games = df[df['OpponentNameRaw'].isin(FAMOUS_OPPONENTS)]
         if not famous_games.empty:
             st.success(f"Found **{len(famous_games)}** games against this list.")
             h2h = famous_games.groupby('OpponentNameRaw')['PlayerResultString'].value_counts().unstack(fill_value=0)
             for res in ['Win','Loss','Draw']: h2h[res] = h2h.get(res, 0)
-            h2h = h2h[['Win', 'Loss', 'Draw']]; h2h['Total'] = h2h.sum(axis=1); h2h['Score'] = h2h['Win'] + 0.5 * h2h['Draw']
+            h2h = h2h[['Win','Loss','Draw']]; h2h['Total']=h2h.sum(axis=1); h2h['Score']=h2h['Win']+0.5*h2h['Draw']
             st.markdown("#### Head-to-Head Results:")
             st.dataframe(h2h.sort_values('Total', ascending=False))
             st.plotly_chart(plot_win_loss_pie(famous_games, f"{current_display_name} vs Famous List"), use_container_width=True)
         else: st.warning(f"ℹ️ No games found against the predefined famous opponents list.")
-    elif selected_section == "Time Forfeit Analysis":
-        st.header("⏱️ Time Forfeit Analysis")
+
+    # --- 9. Termination Analysis ---
+    elif selected_section == analysis_options[8]:
+        # Show Time Forfeit Plots
+        st.subheader("Time Forfeit Analysis")
         tf_games, wins_tf, losses_tf = filter_and_analyze_time_forfeits(df)
         if not tf_games.empty:
-            st.success(f"Found **{len(tf_games):,}** games ending due to time forfeit.")
-            col_tf1, col_tf2 = st.columns(2); col_tf1.metric("Won on Time", wins_tf); col_tf2.metric("Lost on Time", losses_tf)
-            st.markdown("#### Games Ending in Time Forfeit (Recent):")
-            st.dataframe(tf_games[['Date','OpponentName','PlayerColor','PlayerResultString','TimeControl','PlyCount','Termination']].sort_values('Date',ascending=False).head(50))
-            st.markdown("#### Forfeits by Time Control:"); st.dataframe(tf_games['TimeControl_Category'].value_counts().reset_index(name='Count'))
+            st.plotly_chart(plot_time_forfeit_summary(wins_tf, losses_tf), use_container_width=True)
+            st.plotly_chart(plot_time_forfeit_by_tc(tf_games), use_container_width=True)
+            st.markdown("#### Recent Games Ending in Time Forfeit:")
+            st.dataframe(tf_games[['Date','OpponentName','PlayerColor','PlayerResultString','TimeControl','PlyCount','Termination']].sort_values('Date',ascending=False).head(20))
         else: st.warning("ℹ️ No games found with 'Time forfeit' termination.")
+        # Maybe add plot for other termination types?
+        st.subheader("Overall Termination Types")
+        termination_counts = df['Termination'].value_counts()
+        fig_term = px.bar(termination_counts, x=termination_counts.index, y=termination_counts.values,
+                          title="Game Termination Reasons", labels={'x':'Reason','y':'Count'}, text=termination_counts.values)
+        fig_term.update_layout(dragmode=False)
+        fig_term.update_traces(textposition='outside')
+        st.plotly_chart(fig_term, use_container_width=True)
+
+
     st.sidebar.markdown("---"); st.sidebar.info(f"Analysis for {current_display_name}.")
+
+# Handle initial state or no data after analysis
 elif not analyze_button and st.session_state.analysis_df is None: st.info("☝️ Configure settings and click 'Analyze Games'.")
 elif analyze_button and (not isinstance(st.session_state.analysis_df, pd.DataFrame) or st.session_state.analysis_df.empty): st.warning("No analysis data generated. Check settings.")
+
 # --- End of App ---
