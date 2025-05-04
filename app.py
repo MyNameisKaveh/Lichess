@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
-# v7: Sidebar inputs, Selectbox navigation, Added Day/Hour plots, Famous Opponents.
+# v8: FINAL SyntaxError fix in categorize_time_control. Sidebar UI, More plots.
 # =============================================
 
 import streamlit as st
@@ -19,103 +19,85 @@ import traceback
 st.set_page_config(layout="wide", page_title="Lichess Insights", page_icon="♟️")
 
 # --- Constants & Defaults ---
-# Time Periods (No "All Time")
-TIME_PERIOD_OPTIONS = {
-    "Last Month": timedelta(days=30),
-    "Last 3 Months": timedelta(days=90),
-    "Last Year": timedelta(days=365),
-}
+TIME_PERIOD_OPTIONS = { "Last Month": timedelta(days=30), "Last 3 Months": timedelta(days=90), "Last Year": timedelta(days=365) }
 DEFAULT_TIME_PERIOD = "Last Year"
-
-# Single Performance Type Selection
 PERF_TYPE_OPTIONS_SINGLE = ['Bullet', 'Blitz', 'Rapid']
 DEFAULT_PERF_TYPE = 'Bullet'
-
 DEFAULT_RATED_ONLY = True
-
-# Famous Opponents List (Customize as needed)
-FAMOUS_OPPONENTS = [
-    "DrNykterstein", # Magnus Carlsen
-    "MagnusCarlsen", # Magnus Carlsen (maybe different account?)
-    "Hikaru",        # Hikaru Nakamura
-    "AnishGiri",     # Anish Giri
-    "FabianoCaruana",# Fabiano Caruana
-    "lachesisQ",     # Levon Aronian?
-    "WesleySo",      # Wesley So
-    "GMWSO",         # Wesley So?
-    "VladislavArtemiev", # Vladislav Artemiev
-    "Duhless",       # Ian Nepomniachtchi
-    # Add more Lichess usernames here
-]
+FAMOUS_OPPONENTS = [ "DrNykterstein", "MagnusCarlsen", "Hikaru", "AnishGiri", "FabianoCaruana",
+                     "lachesisQ", "WesleySo", "GMWSO", "VladislavArtemiev", "Duhless", ]
 
 # =============================================
-# Helper Function: Categorize Time Control
+# Helper Function: Categorize Time Control *** FINAL SYNTAX CORRECTED ***
 # =============================================
 def categorize_time_control(tc_str, speed_info):
+    """Categorizes time control based on speed info or parsed string."""
     if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
         return speed_info.capitalize()
-    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown', 'Correspondence']:
-        return 'Unknown' if tc_str != 'Correspondence' else 'Correspondence'
+    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']: return 'Unknown'
+    if tc_str == 'Correspondence': return 'Correspondence'
+
     if '+' in tc_str:
-        try: parts = tc_str.split('+'); base = int(parts[0]); increment = int(parts[1]) if len(parts)>1 else 0
-             total = base + 40 * increment
-             if total >= 1500: return 'Classical';
-             if total >= 480: return 'Rapid';
-             if total >= 180: return 'Blitz';
-             if total > 0 : return 'Bullet';
-             return 'Unknown'
-        except (ValueError, IndexError): return 'Unknown'
-    else:
-        try: base = int(tc_str)
-             if base >= 1500: return 'Classical';
-             if base >= 480: return 'Rapid';
-             if base >= 180: return 'Blitz';
-             if base > 0 : return 'Bullet';
-             return 'Unknown'
-        except ValueError: return 'Unknown'
+        try: # <<< START OF TRY BLOCK
+            parts = tc_str.split('+')
+            if len(parts) == 2:
+                base = int(parts[0]); increment = int(parts[1])
+                total = base + 40 * increment
+                if total >= 1500: return 'Classical';
+                if total >= 480: return 'Rapid';
+                if total >= 180: return 'Blitz';
+                if total > 0 : return 'Bullet';
+                return 'Unknown'
+            else: return 'Unknown'
+        except (ValueError, IndexError): # <<< Corresponding EXCEPT block
+            return 'Unknown'
+    else: # Handle cases with only base time (no increment)
+        try: # <<< START OF TRY BLOCK
+            base = int(tc_str)
+            if base >= 1500: return 'Classical';
+            if base >= 480: return 'Rapid';
+            if base >= 180: return 'Blitz';
+            if base > 0 : return 'Bullet';
+            return 'Unknown'
+        except ValueError: # <<< Corresponding EXCEPT block
+            tc_lower = tc_str.lower()
+            if 'classical' in tc_lower: return 'Classical'
+            if 'rapid' in tc_lower: return 'Rapid'
+            if 'blitz' in tc_lower: return 'Blitz'
+            if 'bullet' in tc_lower: return 'Bullet'
+            return 'Unknown'
 
 # =============================================
-# API Data Loading and Processing Function
+# API Data Loading and Processing Function (Unchanged from v7)
 # =============================================
 @st.cache_data(ttl=3600)
 def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, rated: bool):
+    # ... (Code for this function remains exactly the same as the previous version v7) ...
+    # ... (It correctly calls the fixed categorize_time_control) ...
     if not username: st.warning("Please enter a Lichess username."); return pd.DataFrame()
     if not perf_type: st.warning("Please select a game type."); return pd.DataFrame()
-
     username_lower = username.lower()
     st.info(f"Fetching games for '{username}' ({time_period_key} | Type: {perf_type})...")
-
     since_timestamp_ms = None
     time_delta = TIME_PERIOD_OPTIONS.get(time_period_key)
-    if time_delta:
-        start_date = datetime.now(timezone.utc) - time_delta
-        since_timestamp_ms = int(start_date.timestamp() * 1000)
-        st.caption(f"Fetching games since: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-
-    api_params = {"rated": str(rated).lower(), "perfType": perf_type.lower(), "opening": "true",
-                  "moves": "false", "tags": "false", "pgnInJson": "false" }
+    if time_delta: start_date = datetime.now(timezone.utc) - time_delta; since_timestamp_ms = int(start_date.timestamp() * 1000); st.caption(f"Fetching since: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    api_params = {"rated": str(rated).lower(), "perfType": perf_type.lower(), "opening": "true","moves": "false", "tags": "false", "pgnInJson": "false" }
     if since_timestamp_ms: api_params["since"] = since_timestamp_ms
-
-    api_url = f"https://lichess.org/api/games/user/{username}"
-    headers = {"Accept": "application/x-ndjson"}
-    all_games_data = []
-    error_counter = 0
-
+    api_url = f"https://lichess.org/api/games/user/{username}"; headers = {"Accept": "application/x-ndjson"}
+    all_games_data = []; error_counter = 0
     try:
         with st.spinner(f"Calling Lichess API for {username} ({perf_type} games)..."):
-            response = requests.get(api_url, params=api_params, headers=headers, stream=True)
-            response.raise_for_status()
+            response = requests.get(api_url, params=api_params, headers=headers, stream=True); response.raise_for_status()
             for line in response.iter_lines():
                 if line:
-                    game_data = None; game_data_raw = line.decode('utf-8')
+                    game_data_raw = line.decode('utf-8'); game_data = None
                     try:
                         game_data = json.loads(game_data_raw)
-                        # --- Data Extraction ---
                         white_info=game_data.get('players',{}).get('white',{}); black_info=game_data.get('players',{}).get('black',{})
                         white_user=white_info.get('user',{}); black_user=black_info.get('user',{})
                         opening_info=game_data.get('opening',{}); clock_info=game_data.get('clock')
                         game_id=game_data.get('id','N/A'); created_at_ms=game_data.get('createdAt')
-                        game_date=pd.to_datetime(created_at_ms,unit='ms',utc=True,errors='coerce')
+                        game_date=pd.to_datetime(created_at_ms,unit='ms',utc=True,errors='coerce');
                         if pd.isna(game_date): continue
                         variant=game_data.get('variant','standard'); speed=game_data.get('speed','unknown')
                         perf=game_data.get('perf','unknown'); status=game_data.get('status','unknown'); winner=game_data.get('winner')
@@ -144,42 +126,30 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
                         if opp_title_clean and opp_title_clean!='?': opp_title_final=opp_title_clean
                         def clean_name(n): return re.sub(r'^(GM|IM|FM|WGM|WIM|WFM|CM|WCM)\s+','',n).strip()
                         opp_name_clean=clean_name(opp_name_raw)
-                        # --- Store data ---
                         all_games_data.append({'Date':game_date,'Event':perf,'White':white_name,'Black':black_name,'Result':"1-0" if winner=='white' else ("0-1" if winner=='black' else "1/2-1/2"),'WhiteElo':int(white_rating) if not pd.isna(white_rating) else 0,'BlackElo':int(black_rating) if not pd.isna(black_rating) else 0,'ECO':eco,'Opening':op_name,'TimeControl':tc_str,'Termination':term,'PlyCount':game_data.get('turns',0),'LichessID':game_id,'PlayerID':username,'PlayerColor':player_color,'PlayerElo':int(player_elo),'OpponentName':opp_name_clean,'OpponentNameRaw':opp_name_raw,'OpponentElo':int(opp_elo),'OpponentTitle':opp_title_final,'PlayerResultNumeric':res_num,'PlayerResultString':res_str,'Variant':variant,'Speed':speed,'Status':status,'PerfType':perf})
                     except json.JSONDecodeError: error_counter += 1
-                    except Exception: error_counter += 1 # Count other errors minimally
-
+                    except Exception: error_counter += 1
     except requests.exceptions.RequestException as e: st.error(f"🚨 API Request Failed: {e}"); return pd.DataFrame()
     except Exception as e: st.error(f"🚨 Unexpected error: {e}"); st.text(traceback.format_exc()); return pd.DataFrame()
-
     if error_counter > 0: st.warning(f"Skipped {error_counter} entries due to processing errors.")
     if not all_games_data: st.warning(f"No games found for '{username}' matching criteria."); return pd.DataFrame()
-
-    df = pd.DataFrame(all_games_data)
-    st.success(f"Processed {len(df)} games.")
-
-    # --- Final Feature Engineering ---
+    df = pd.DataFrame(all_games_data); st.success(f"Processed {len(df)} games.")
     if not df.empty:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce'); df = df.dropna(subset=['Date'])
         if df.empty: return df
-        df['Year'] = df['Date'].dt.year; df['Month'] = df['Date'].dt.month;
-        # Add Hour and DayOfWeek for new plots
-        df['Hour'] = df['Date'].dt.hour
-        df['DayOfWeekNum'] = df['Date'].dt.dayofweek # Monday=0, Sunday=6
-        df['DayOfWeekName'] = df['Date'].dt.day_name()
+        df['Year'] = df['Date'].dt.year; df['Month'] = df['Date'].dt.month; df['Hour'] = df['Date'].dt.hour
+        df['DayOfWeekNum'] = df['Date'].dt.dayofweek; df['DayOfWeekName'] = df['Date'].dt.day_name()
         df['PlayerElo'] = df['PlayerElo'].astype(int); df['OpponentElo'] = df['OpponentElo'].astype(int)
         df['EloDiff'] = df['PlayerElo'] - df['OpponentElo']
-        df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1)
-        df = df.rename(columns={'Opening': 'OpeningName'})
-        df = df.sort_values(by='Date').reset_index(drop=True)
+        df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1) # Calls corrected func
+        df = df.rename(columns={'Opening': 'OpeningName'}); df = df.sort_values(by='Date').reset_index(drop=True)
     return df
 
 # =============================================
-# Plotting Functions (Adding new DOW/Hour plots)
+# Plotting Functions (Unchanged from v7 - dragmode=False applied)
 # =============================================
-# (Keep existing plot functions: plot_win_loss_pie, plot_win_loss_by_color, etc.)
-# ... Ensure all have fig.update_layout(dragmode=False) ...
-
+# (Insert ALL plotting functions here - plot_win_loss_pie, ..., plot_most_frequent_opponents)
+# ... (Code identical to previous version v7) ...
 def plot_win_loss_pie(df, display_name):
     if 'PlayerResultString' not in df.columns: return go.Figure()
     result_counts = df['PlayerResultString'].value_counts()
@@ -231,7 +201,6 @@ def plot_performance_vs_opponent_elo(df):
     return fig
 
 def plot_games_by_dow(df):
-    """Plots number of games played per day of the week."""
     if 'DayOfWeekName' not in df.columns: return go.Figure()
     dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     games_by_dow = df['DayOfWeekName'].value_counts().reindex(dow_order, fill_value=0)
@@ -243,7 +212,6 @@ def plot_games_by_dow(df):
     return fig
 
 def plot_winrate_by_dow(df):
-    """Plots win rate per day of the week."""
     if not all(col in df.columns for col in ['DayOfWeekName', 'PlayerResultNumeric']): return go.Figure()
     dow_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     wins_by_dow = df[df['PlayerResultNumeric'] == 1].groupby('DayOfWeekName').size()
@@ -258,10 +226,8 @@ def plot_winrate_by_dow(df):
     return fig
 
 def plot_games_by_hour(df):
-    """Plots number of games played per hour of the day (UTC)."""
     if 'Hour' not in df.columns: return go.Figure()
     games_by_hour = df['Hour'].value_counts().sort_index()
-    # Ensure all 24 hours are present for a complete x-axis
     games_by_hour = games_by_hour.reindex(range(24), fill_value=0)
     fig = px.bar(games_by_hour, x=games_by_hour.index, y=games_by_hour.values,
                  title="Games Played per Hour of Day (UTC)", labels={'x': 'Hour (UTC)', 'y': 'Number of Games'},
@@ -271,7 +237,6 @@ def plot_games_by_hour(df):
     return fig
 
 def plot_winrate_by_hour(df):
-    """Plots win rate per hour of the day (UTC)."""
     if not all(col in df.columns for col in ['Hour', 'PlayerResultNumeric']): return go.Figure()
     wins_by_hour = df[df['PlayerResultNumeric'] == 1].groupby('Hour').size()
     total_by_hour = df.groupby('Hour').size()
@@ -283,7 +248,6 @@ def plot_winrate_by_hour(df):
     fig.update_layout(yaxis_range=[0, 100], xaxis=dict(tickmode='linear'), dragmode=False)
     return fig
 
-# Keep other plotting functions (Year, TimeControl, Opening, Opponent) as they were in v5
 def plot_games_per_year(df):
     if 'Year' not in df.columns: return go.Figure()
     games_per_year = df['Year'].value_counts().sort_index()
@@ -376,7 +340,7 @@ def filter_and_analyze_time_forfeits(df):
     return tf_games, wins_tf, losses_tf
 
 # =============================================
-# Streamlit App Layout - v7 (Sidebar Inputs, Selectbox Nav, More Plots)
+# Streamlit App Layout - v8 (Syntax Fix, Final UI)
 # =============================================
 
 # --- Sidebar ---
@@ -384,9 +348,8 @@ st.sidebar.title("⚙️ Settings")
 lichess_username = st.sidebar.text_input("Lichess Username:", key="username_input", placeholder="e.g., DrNykterstein")
 time_period = st.sidebar.selectbox("Time Period:", options=list(TIME_PERIOD_OPTIONS.keys()), key="time_period_select")
 selected_perf_type = st.sidebar.selectbox("Game Type:", options=PERF_TYPE_OPTIONS_SINGLE, index=PERF_TYPE_OPTIONS_SINGLE.index(DEFAULT_PERF_TYPE), key="perf_type_select")
-analyze_button = st.sidebar.button("Analyze Games", key="analyze_button", use_container_width=True) # Make button wider
-
-st.sidebar.markdown("---") # Separator
+analyze_button = st.sidebar.button("Analyze Games", key="analyze_button", use_container_width=True)
+st.sidebar.markdown("---")
 
 # --- Main Area Title ---
 st.title("♟️ Lichess Insights")
@@ -399,22 +362,21 @@ if 'current_perf_type' not in st.session_state: st.session_state.current_perf_ty
 
 # --- Trigger Analysis ---
 if analyze_button and lichess_username:
-    # Check if settings changed
     if (lichess_username != st.session_state.current_username or
             time_period != st.session_state.current_time_period or
             selected_perf_type != st.session_state.current_perf_type):
-        st.session_state.analysis_df = None # Clear previous results
-        if 'selected_section' in st.session_state: del st.session_state['selected_section']
-        # Call API function
-        df_loaded = load_from_lichess_api(lichess_username, time_period, selected_perf_type, DEFAULT_RATED_ONLY)
-        # Store results and settings in state
-        st.session_state.analysis_df = df_loaded
-        st.session_state.current_username = lichess_username
-        st.session_state.current_time_period = time_period
-        st.session_state.current_perf_type = selected_perf_type
-        st.rerun() # Rerun to update the display cleanly
+        if not selected_perf_type: st.warning("Please select a game type.")
+        else:
+            st.session_state.analysis_df = None
+            if 'selected_section' in st.session_state: del st.session_state['selected_section']
+            df_loaded = load_from_lichess_api(lichess_username, time_period, selected_perf_type, DEFAULT_RATED_ONLY)
+            st.session_state.analysis_df = df_loaded
+            st.session_state.current_username = lichess_username
+            st.session_state.current_time_period = time_period
+            st.session_state.current_perf_type = selected_perf_type
+            st.rerun()
     else:
-        st.sidebar.info("Settings haven't changed. Displaying previous results.") # Show message in sidebar
+        st.sidebar.info("Settings haven't changed.")
 
 
 # --- Display Area ---
@@ -423,36 +385,20 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
     current_display_name = st.session_state.current_username
     current_perf_type = st.session_state.current_perf_type
 
-    # Display summary info below title
     st.write(f"Analysis for **{current_display_name}** | Period: **{st.session_state.current_time_period}** | Type: **{current_perf_type.capitalize()}**")
     st.caption(f"Total Rated Games Analyzed: **{len(df):,}**")
     st.markdown("---")
 
     # --- Sidebar Navigation ---
     st.sidebar.title("📊 Analysis Sections")
-    # Define sections based on Kaggle Notebook structure
-    analysis_options = [
-        "Overview",
-        "Time & Date Analysis", # Added DOW/Hour plots here
-        "ECO & Opening Analysis",
-        "Opponent Analysis",
-        "Games against GMs",
-        "Famous Opponent Analysis", # Added this section
-        "Time Forfeit Analysis"
-    ]
+    analysis_options = [ "Overview", "Time & Date Analysis", "ECO & Opening Analysis", "Opponent Analysis",
+                         "Games against GMs", "Famous Opponent Analysis", "Time Forfeit Analysis" ]
     if 'selected_section' not in st.session_state: st.session_state.selected_section = "Overview"
-    # Use Selectbox for navigation
-    selected_section = st.sidebar.selectbox(
-         "Choose section:",
-         analysis_options,
-         index=analysis_options.index(st.session_state.selected_section),
-         key="section_select" # Different key from radio
-    )
+    selected_section = st.sidebar.selectbox( "Choose section:", analysis_options,
+         index=analysis_options.index(st.session_state.selected_section), key="section_select")
     st.session_state.selected_section = selected_section
 
-
     # --- Display Content Based on Selected Section ---
-    # Structure now follows Kaggle notebook more closely
     if selected_section == "Overview":
         st.header("📈 General Overview")
         col_ov1, col_ov2 = st.columns(2);
@@ -466,12 +412,10 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         st.plotly_chart(plot_games_per_year(df), use_container_width=True)
         st.plotly_chart(plot_win_rate_per_year(df), use_container_width=True)
         st.plotly_chart(plot_performance_by_time_control(df), use_container_width=True)
-        # Day of Week Analysis
         st.subheader("Performance by Day of Week")
         col_dow1, col_dow2 = st.columns(2)
         with col_dow1: st.plotly_chart(plot_games_by_dow(df), use_container_width=True)
         with col_dow2: st.plotly_chart(plot_winrate_by_dow(df), use_container_width=True)
-        # Hour of Day Analysis
         st.subheader("Performance by Hour of Day (UTC)")
         col_hod1, col_hod2 = st.columns(2)
         with col_hod1: st.plotly_chart(plot_games_by_hour(df), use_container_width=True)
@@ -484,24 +428,21 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         min_games_opening = st.slider("Min games for perf.:", 1, 25, 5, key="min_games_perf_eco")
         n_openings_perf = st.slider("Num openings by win rate:", 5, 50, 20, key="n_openings_perf_eco")
         st.plotly_chart(plot_win_rate_by_opening(df, min_games=min_games_opening, top_n=n_openings_perf), use_container_width=True)
-        # Maybe add ECO code frequency plot if desired
 
     elif selected_section == "Opponent Analysis":
         st.header("👥 Opponent Analysis")
         n_opponents = st.slider("Num top opponents:", 5, 50, 20, key="n_opponents_freq_opp")
         st.plotly_chart(plot_most_frequent_opponents(df, top_n=n_opponents), use_container_width=True)
         st.plotly_chart(plot_performance_vs_opponent_elo(df), use_container_width=True)
-        # Add opponent list table?
         st.markdown(f"#### Top {n_opponents} Opponents List")
         try: st.dataframe(df[df['OpponentName'] != 'Unknown']['OpponentName'].value_counts().reset_index(name='Games').head(n_opponents))
-        except KeyError: st.warning("Could not generate opponent table.")
+        except KeyError: st.warning("Could not generate table.")
 
     elif selected_section == "Games against GMs":
         st.header("👑 Analysis Against Grandmasters (GMs)")
         gm_games = filter_and_analyze_gms(df)
         if not gm_games.empty:
             st.success(f"Found **{len(gm_games):,}** games vs 'GM'. Analyzing subset...")
-            # Display GM analysis plots sequentially
             st.plotly_chart(plot_win_loss_pie(gm_games, f"{current_display_name} vs GMs"), use_container_width=True)
             st.plotly_chart(plot_win_loss_by_color(gm_games), use_container_width=True)
             st.plotly_chart(plot_rating_trend(gm_games, f"{current_display_name} (vs GMs)"), use_container_width=True)
@@ -515,30 +456,19 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
 
     elif selected_section == "Famous Opponent Analysis":
         st.header("🌟 Analysis Against Famous Opponents")
-        # Filter games against the defined list
-        famous_games = df[df['OpponentNameRaw'].isin(FAMOUS_OPPONENTS)] # Check against raw name for IDs like DrNykterstein
+        famous_games = df[df['OpponentNameRaw'].isin(FAMOUS_OPPONENTS)]
         if not famous_games.empty:
             st.success(f"Found **{len(famous_games)}** games against predefined famous opponents.")
             st.markdown(f"(Opponents checked: {', '.join(FAMOUS_OPPONENTS)})")
-
-            # Calculate Head-to-Head
             h2h = famous_games.groupby('OpponentNameRaw')['PlayerResultString'].value_counts().unstack(fill_value=0)
-            if 'Win' not in h2h.columns: h2h['Win'] = 0
-            if 'Loss' not in h2h.columns: h2h['Loss'] = 0
-            if 'Draw' not in h2h.columns: h2h['Draw'] = 0
-            h2h = h2h[['Win', 'Loss', 'Draw']] # Order columns
-            h2h['Total'] = h2h.sum(axis=1)
-            h2h['Score'] = h2h['Win'] + 0.5 * h2h['Draw']
+            for res in ['Win','Loss','Draw']: h2h[res] = h2h.get(res, 0) # Ensure columns exist
+            h2h = h2h[['Win', 'Loss', 'Draw']]; h2h['Total'] = h2h.sum(axis=1); h2h['Score'] = h2h['Win'] + 0.5 * h2h['Draw']
             st.markdown("#### Head-to-Head Results:")
             st.dataframe(h2h.sort_values('Total', ascending=False))
-
-            # Overall Performance vs Famous
             st.plotly_chart(plot_win_loss_pie(famous_games, f"{current_display_name} vs Famous"), use_container_width=True)
-
         else:
-            st.warning(f"ℹ️ No games found against the predefined famous opponents list in the selected period/game type.")
+            st.warning(f"ℹ️ No games found against famous opponents list.")
             st.markdown(f"(Opponents checked: {', '.join(FAMOUS_OPPONENTS)})")
-
 
     elif selected_section == "Time Forfeit Analysis":
         st.header("⏱️ Time Forfeit Analysis")
@@ -552,12 +482,11 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         else: st.warning("ℹ️ No games found with 'Time forfeit' termination.")
 
     st.sidebar.markdown("---")
-    st.sidebar.info(f"Analysis for {current_display_name}. Using Lichess API.")
+    st.sidebar.info(f"Analysis for {current_display_name}.")
 
-# Handle initial state or no data after analysis
 elif not analyze_button and st.session_state.analysis_df is None:
      st.info("☝️ Configure settings in the sidebar and click 'Analyze Games'.")
 elif analyze_button and (not isinstance(st.session_state.analysis_df, pd.DataFrame) or st.session_state.analysis_df.empty):
-     st.warning("No analysis data generated based on the current settings. Check username or try different options.")
+     st.warning("No analysis data generated. Check username or try different settings.")
 
 # --- End of App ---
