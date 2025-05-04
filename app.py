@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
-# v10: Updated Time Period options (Removed All Time, Added 3 Years).
+# v11: Absolutely final SyntaxError fix in categorize_time_control.
 # =============================================
 
 import streamlit as st
@@ -19,15 +19,8 @@ import traceback
 st.set_page_config(layout="wide", page_title="Lichess Insights", page_icon="♟️")
 
 # --- Constants & Defaults ---
-# Updated Time Periods
-TIME_PERIOD_OPTIONS = {
-    "Last Month": timedelta(days=30),
-    "Last 3 Months": timedelta(days=90),
-    "Last Year": timedelta(days=365),
-    "Last 3 Years": timedelta(days=3*365) # Added 3 years
-}
-DEFAULT_TIME_PERIOD = "Last Year" # Default remains Last Year
-
+TIME_PERIOD_OPTIONS = { "Last Month": timedelta(days=30), "Last 3 Months": timedelta(days=90), "Last Year": timedelta(days=365), "Last 3 Years": timedelta(days=3*365) }
+DEFAULT_TIME_PERIOD = "Last Year"
 PERF_TYPE_OPTIONS_SINGLE = ['Bullet', 'Blitz', 'Rapid']
 DEFAULT_PERF_TYPE = 'Bullet'
 DEFAULT_RATED_ONLY = True
@@ -35,50 +28,77 @@ FAMOUS_OPPONENTS = [ "DrNykterstein", "MagnusCarlsen", "Hikaru", "AnishGiri", "F
                      "lachesisQ", "WesleySo", "GMWSO", "VladislavArtemiev", "Duhless", ]
 
 # =============================================
-# Helper Function: Categorize Time Control (Correct)
+# Helper Function: Categorize Time Control *** FINAL SYNTAX CORRECTED ***
 # =============================================
 def categorize_time_control(tc_str, speed_info):
-    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']: return speed_info.capitalize()
-    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown','Correspondence']: return 'Unknown' if tc_str!='Correspondence' else 'Correspondence'
-    if '+' in tc_str:
-        try: parts = tc_str.split('+');
-             if len(parts)==2: base=int(parts[0]); increment=int(parts[1]); total=base+40*increment
-             else: return 'Unknown'
-        except(ValueError,IndexError): return 'Unknown'
-        if total>=1500: return 'Classical';
-        if total>=480: return 'Rapid';
-        if total>=180: return 'Blitz';
-        if total>0 : return 'Bullet';
+    """Categorizes time control based on speed info or parsed string."""
+    # Prioritize speed info if available and standard
+    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
+        return speed_info.capitalize()
+
+    # Fallback to parsing the time_control_str
+    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']:
         return 'Unknown'
+    if tc_str == 'Correspondence':
+        return 'Correspondence'
+
+    # Handle format like "180+2"
+    if '+' in tc_str:
+        try: # <<< Outer TRY for the whole '+'-logic parsing
+            parts = tc_str.split('+')
+            if len(parts) != 2: # Ensure exactly two parts after split
+                return 'Unknown'
+
+            # Convert parts to integers
+            base = int(parts[0])
+            increment = int(parts[1])
+
+            # Calculate estimated total time
+            total = base + 40 * increment
+            if total >= 1500: return 'Classical'
+            if total >= 480: return 'Rapid'
+            if total >= 180: return 'Blitz'
+            if total > 0 : return 'Bullet'
+            return 'Unknown'
+
+        except (ValueError, IndexError): # <<< Correctly placed EXCEPT for the outer TRY
+            # Handles errors from split (unlikely with length check), or int() conversion
+            return 'Unknown'
+        # Removed redundant/misplaced except Exception here
+
+    # Handle format like "300" (only base time)
     else:
-        try: base=int(tc_str)
-             if base>=1500: return 'Classical';
-             if base>=480: return 'Rapid';
-             if base>=180: return 'Blitz';
-             if base>0 : return 'Bullet';
-             return 'Unknown'
-        except ValueError: tc_lower=tc_str.lower();
-             if 'classical' in tc_lower: return 'Classical';
-             if 'rapid' in tc_lower: return 'Rapid';
-             if 'blitz' in tc_lower: return 'Blitz';
-             if 'bullet' in tc_lower: return 'Bullet';
-             return 'Unknown'
+        try: # <<< TRY block for parsing base time only
+            base = int(tc_str)
+            if base >= 1500: return 'Classical'
+            if base >= 480: return 'Rapid'
+            if base >= 180: return 'Blitz'
+            if base > 0 : return 'Bullet'
+            return 'Unknown'
+
+        except ValueError: # <<< Correctly placed EXCEPT for base time conversion failure
+            # If integer conversion fails, check for keywords
+            tc_lower = tc_str.lower()
+            if 'classical' in tc_lower: return 'Classical'
+            if 'rapid' in tc_lower: return 'Rapid'
+            if 'blitz' in tc_lower: return 'Blitz'
+            if 'bullet' in tc_lower: return 'Bullet'
+            return 'Unknown' # Failed all checks
 
 # =============================================
-# API Data Loading and Processing Function (Unchanged from v9)
+# API Data Loading and Processing Function (Unchanged from v10)
 # =============================================
 @st.cache_data(ttl=3600)
 def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, rated: bool):
-    # ... (Code identical to version 9) ...
+    # ... (Code identical to version 10 - calls the fixed helper) ...
     if not username: st.warning("Please enter a Lichess username."); return pd.DataFrame()
     if not perf_type: st.warning("Please select a game type."); return pd.DataFrame()
     username_lower = username.lower()
     st.info(f"Fetching games for '{username}' ({time_period_key} | Type: {perf_type})...")
     since_timestamp_ms = None
-    # Use the updated TIME_PERIOD_OPTIONS
     time_delta = TIME_PERIOD_OPTIONS.get(time_period_key)
     if time_delta: start_date = datetime.now(timezone.utc) - time_delta; since_timestamp_ms = int(start_date.timestamp() * 1000); st.caption(f"Fetching since: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    else: st.warning("Invalid time period selected.") # Should not happen with current options
+    else: st.warning("Invalid time period selected.")
     api_params = {"rated": str(rated).lower(), "perfType": perf_type.lower(), "opening": "true","moves": "false", "tags": "false", "pgnInJson": "false" }
     if since_timestamp_ms: api_params["since"] = since_timestamp_ms
     api_url = f"https://lichess.org/api/games/user/{username}"; headers = {"Accept": "application/x-ndjson"}
@@ -139,13 +159,12 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
         df['DayOfWeekNum'] = df['Date'].dt.dayofweek; df['DayOfWeekName'] = df['Date'].dt.day_name()
         df['PlayerElo'] = df['PlayerElo'].astype(int); df['OpponentElo'] = df['OpponentElo'].astype(int)
         df['EloDiff'] = df['PlayerElo'] - df['OpponentElo']
-        df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1)
+        df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1) # Calls corrected func
         df = df.rename(columns={'Opening': 'OpeningName'}); df = df.sort_values(by='Date').reset_index(drop=True)
     return df
 
-
 # =============================================
-# Plotting Functions (Unchanged from v8)
+# Plotting Functions (Unchanged from v8 - dragmode=False applied)
 # =============================================
 # (Insert ALL plotting functions here - plot_win_loss_pie, ..., plot_most_frequent_opponents)
 # ... (Code identical to previous version v8) ...
@@ -325,6 +344,7 @@ def plot_most_frequent_opponents(df, top_n=20):
 # =============================================
 # Helper Functions
 # =============================================
+# ... (filter_and_analyze_gms, filter_and_analyze_time_forfeits - unchanged) ...
 def filter_and_analyze_gms(df):
     if 'OpponentTitle' not in df.columns: return pd.DataFrame()
     gm_games = df[df['OpponentTitle'] == 'GM'].copy()
@@ -339,7 +359,7 @@ def filter_and_analyze_time_forfeits(df):
     return tf_games, wins_tf, losses_tf
 
 # =============================================
-# Streamlit App Layout - v10 (Time Period Update)
+# Streamlit App Layout - v11 (Final Syntax Fix in Helper)
 # =============================================
 
 # --- Sidebar ---
@@ -380,7 +400,7 @@ if analyze_button and lichess_username:
 
 
 # --- Display Area ---
-# (Code identical to previous version v8)
+# (Code identical to previous version v10)
 if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_state.analysis_df.empty:
     df = st.session_state.analysis_df
     current_display_name = st.session_state.current_username
