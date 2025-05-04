@@ -2,7 +2,7 @@
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
 # Fetches and analyzes games for a given Lichess username and time period.
-# Includes enhanced debugging and SyntaxError fix.
+# Includes enhanced debugging, SyntaxError fix, and TEMPORARILY disabled rerun.
 # =============================================
 
 import streamlit as st
@@ -35,38 +35,29 @@ DEFAULT_PERF_TYPES = ['blitz', 'rapid', 'classical']
 DEFAULT_RATED_ONLY = True
 
 # =============================================
-# Helper Function: Categorize Time Control *** CORRECTED ***
+# Helper Function: Categorize Time Control (Corrected)
 # =============================================
 def categorize_time_control(tc_str, speed_info):
     """Categorizes time control based on speed info or parsed string."""
-    # Prioritize speed info if available and standard
     if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
         return speed_info.capitalize()
-
-    # Fallback to parsing the time_control_str (e.g., "180+0")
-    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']:
-        return 'Unknown'
-    if tc_str == 'Correspondence':
-        return 'Correspondence'
+    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']: return 'Unknown'
+    if tc_str == 'Correspondence': return 'Correspondence'
 
     if '+' in tc_str:
         try:
             parts = tc_str.split('+')
-            # Ensure both parts exist and are convertible to int
             if len(parts) == 2:
-                base = int(parts[0])
-                increment = int(parts[1])
-                total = base + 40 * increment # Estimate time for 40 moves
-                if total >= 1500: return 'Classical'; # >= 25 min
-                if total >= 480: return 'Rapid';     # >= 8 min
-                if total >= 180: return 'Blitz';     # >= 3 min
-                if total > 0 : return 'Bullet';      # < 3 min
-                return 'Unknown' # Handle cases like 0+0?
-            else:
-                return 'Unknown' # Invalid format if not 2 parts
-        except (ValueError, IndexError):
-            return 'Unknown' # Return Unknown if conversion to int fails or parts missing
-    else: # Handle cases with only base time (no increment)
+                base = int(parts[0]); increment = int(parts[1])
+                total = base + 40 * increment
+                if total >= 1500: return 'Classical';
+                if total >= 480: return 'Rapid';
+                if total >= 180: return 'Blitz';
+                if total > 0 : return 'Bullet';
+                return 'Unknown'
+            else: return 'Unknown'
+        except (ValueError, IndexError): return 'Unknown'
+    else:
         try:
             base = int(tc_str)
             if base >= 1500: return 'Classical';
@@ -75,7 +66,6 @@ def categorize_time_control(tc_str, speed_info):
             if base > 0 : return 'Bullet';
             return 'Unknown'
         except ValueError:
-            # If conversion fails, check for keywords as last resort
             tc_lower = tc_str.lower()
             if 'classical' in tc_lower: return 'Classical'
             if 'rapid' in tc_lower: return 'Rapid'
@@ -84,7 +74,7 @@ def categorize_time_control(tc_str, speed_info):
             return 'Unknown'
 
 # =============================================
-# API Data Loading and Processing Function (Uses corrected helper)
+# API Data Loading and Processing Function (with Enhanced Debugging)
 # =============================================
 @st.cache_data(ttl=3600)
 def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[str], rated: bool):
@@ -123,7 +113,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
             response = requests.get(api_url, params=api_params, headers=headers, stream=True)
             response.raise_for_status()
 
-            st.write("Starting to process game data stream...")
+            st.write("DEBUG: Starting to process game data stream...") # DEBUG LINE
             for line in response.iter_lines():
                 if line:
                     game_data_raw = line.decode('utf-8')
@@ -219,7 +209,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
                             st.text(traceback.format_exc())
                             if error_counter <= 5 : st.code(game_data_raw, language="json")
 
-            st.write(f"Finished processing stream after checking {games_processed_for_log} potential games.")
+            st.write(f"DEBUG: Finished processing stream after checking {games_processed_for_log} potential games.") # DEBUG LINE
 
     except requests.exceptions.HTTPError as e_http:
         st.error(f"🚨 API Request Failed (HTTP Error): {e_http.response.status_code} - {e_http.response.reason}")
@@ -263,6 +253,11 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
         df = df.rename(columns={'Opening': 'OpeningName'})
         df = df.sort_values(by='Date').reset_index(drop=True)
 
+    # --- DEBUG Line before return ---
+    if isinstance(df, pd.DataFrame):
+        st.write(f"DEBUG: Returning DataFrame with {len(df)} rows from load_from_lichess_api.") # DEBUG LINE
+    else:
+        st.write("DEBUG: Returning non-DataFrame from load_from_lichess_api.") # DEBUG LINE
     return df
 # === End of load_from_lichess_api function ===
 
@@ -270,6 +265,8 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_types: list[
 # =============================================
 # Plotting Functions (Assumed Correct)
 # =============================================
+# (Insert ALL plotting functions here - plot_win_loss_pie, plot_win_loss_by_color, ...)
+# ... (Assume they are correct from the previous full code version) ...
 def plot_win_loss_pie(df, display_name):
     if 'PlayerResultString' not in df.columns: return go.Figure()
     result_counts = df['PlayerResultString'].value_counts()
@@ -441,21 +438,33 @@ if 'current_time_period' not in st.session_state: st.session_state.current_time_
 
 if analyze_button and lichess_username:
     if lichess_username != st.session_state.current_username or time_period != st.session_state.current_time_period:
-        # Clear previous results before running new analysis
-        st.session_state.analysis_df = None # Explicitly clear old df
+        # --- DEBUG Lines before calling API ---
+        st.write(f"DEBUG: Analyze button clicked. Current User: '{st.session_state.current_username}', New User: '{lichess_username}'. Current Period: '{st.session_state.current_time_period}', New Period: '{time_period}'.")
+        st.write("DEBUG: Condition met, calling load_from_lichess_api...")
+        # ---
+
+        st.session_state.analysis_df = None # Clear old df before new analysis
         if 'selected_section' in st.session_state: del st.session_state['selected_section']
 
         df_loaded = load_from_lichess_api(lichess_username, time_period, DEFAULT_PERF_TYPES, DEFAULT_RATED_ONLY)
-        st.session_state.analysis_df = df_loaded
+
+        # --- DEBUG Lines after calling API ---
+        st.write(f"DEBUG: load_from_lichess_api returned: {type(df_loaded)}")
+        if isinstance(df_loaded, pd.DataFrame):
+             st.write(f"DEBUG: DataFrame is empty: {df_loaded.empty}")
+        # ---
+
+        st.session_state.analysis_df = df_loaded # Store the result (even if empty)
         st.session_state.current_username = lichess_username
         st.session_state.current_time_period = time_period
-        st.rerun() # Rerun to display results/errors cleanly
+        # st.rerun() # Rerun temporarily disabled for debugging
 
     else:
         st.info("Analysis results for this user/period are already displayed.")
 
 
 # --- Display Results ---
+# Check if DataFrame exists in session state AND is not empty
 if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_state.analysis_df.empty:
     df = st.session_state.analysis_df
     current_display_name = st.session_state.current_username
@@ -472,7 +481,7 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
          index=analysis_options.index(st.session_state.selected_section), key="section_radio")
     st.session_state.selected_section = selected_section
 
-    # --- Display Content ---
+    # --- Display Content Based on Selected Section ---
     if selected_section == "Overview":
         st.header("📈 General Overview")
         col_ov1, col_ov2 = st.columns(2);
@@ -480,7 +489,8 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         with col_ov2: st.plotly_chart(plot_win_loss_by_color(df), use_container_width=True)
         st.plotly_chart(plot_rating_trend(df, current_display_name), use_container_width=True)
         st.plotly_chart(plot_performance_vs_opponent_elo(df), use_container_width=True)
-    # ... (Rest of the sections remain the same as the previous complete code version) ...
+
+    # ...(Rest of the elif blocks for other sections - assumed correct)...
     elif selected_section == "Time and Date Analysis":
         st.header("📅 Time and Date Analysis")
         tab_time1, tab_time2, tab_time3 = st.tabs(["Games Over Time", "Performance by Year", "Performance by Time Control"])
@@ -552,9 +562,12 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
     st.sidebar.markdown("---")
     st.sidebar.info(f"Analysis for {current_display_name}. Using Lichess API.")
 
+# Handle the case where analysis ran but returned empty/None
+elif analyze_button and (not isinstance(st.session_state.analysis_df, pd.DataFrame) or st.session_state.analysis_df.empty):
+     st.warning("No analysis data could be generated based on the provided username and period. Please check the username or try a different period. Review logs/errors above if any were displayed.")
+# Initial prompt message
 elif not analyze_button and st.session_state.analysis_df is None:
      st.info("☝️ Enter a Lichess username, select time period, then click 'Analyze Games'.")
-elif analyze_button and (not isinstance(st.session_state.analysis_df, pd.DataFrame) or st.session_state.analysis_df.empty):
-     st.warning("No analysis data generated. Check username or period. Review logs above for errors.")
+
 
 # --- End of App ---
