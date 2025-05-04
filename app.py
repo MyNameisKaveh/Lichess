@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
-# v17: Fixed SyntaxError in display section (multiple 'with' on one line).
+# v17: Rewritten load_eco_mapping to fix SyntaxError.
 # =============================================
 
 import streamlit as st
@@ -25,7 +25,7 @@ DEFAULT_TIME_PERIOD = "Last Year"
 PERF_TYPE_OPTIONS_SINGLE = ['Bullet', 'Blitz', 'Rapid']
 DEFAULT_PERF_TYPE = 'Bullet'
 DEFAULT_RATED_ONLY = True
-ECO_CSV_PATH = "eco_to_opening.csv"
+ECO_CSV_PATH = "eco_to_opening.csv" # Ensure this file exists in the same directory or provide the correct path
 TITLES_TO_ANALYZE = ['GM', 'IM', 'FM', 'CM', 'WGM', 'WIM', 'WFM', 'WCM', 'NM']
 FAMOUS_OPPONENTS = [ "DrNykterstein", "MagnusCarlsen", "Hikaru", "AnishGiri", "FabianoCaruana",
                      "lachesisQ", "WesleySo", "GMWSO", "VladislavArtemiev", "Duhless", ]
@@ -34,55 +34,71 @@ FAMOUS_OPPONENTS = [ "DrNykterstein", "MagnusCarlsen", "Hikaru", "AnishGiri", "F
 # Helper Function: Categorize Time Control (Correct from v16)
 # =============================================
 def categorize_time_control(tc_str, speed_info):
-    # (Code identical to v16)
+    # (Identical to v16 - Assumed Correct Now)
     if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']: return speed_info.capitalize()
     if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown','Correspondence']: return 'Unknown' if tc_str!='Correspondence' else 'Correspondence'
     if '+' in tc_str:
-        try:
-            parts = tc_str.split('+')
-            if len(parts) != 2: return 'Unknown'
-            base = int(parts[0]); increment = int(parts[1])
-            total = base + 40 * increment
-            if total >= 1500: return 'Classical';
-            if total >= 480: return 'Rapid';
-            if total >= 180: return 'Blitz';
-            if total > 0 : return 'Bullet';
-            return 'Unknown'
-        except (ValueError, IndexError): return 'Unknown'
+        try: parts = tc_str.split('+');
+             if len(parts)!=2: return 'Unknown'
+             base=int(parts[0]); increment=int(parts[1]); total=base+40*increment
+             if total>=1500: return 'Classical';
+             if total>=480: return 'Rapid';
+             if total>=180: return 'Blitz';
+             if total>0 : return 'Bullet';
+             return 'Unknown'
+        except(ValueError,IndexError): return 'Unknown'
     else:
-        try:
-            base = int(tc_str)
-            if base >= 1500: return 'Classical';
-            if base >= 480: return 'Rapid';
-            if base >= 180: return 'Blitz';
-            if base > 0 : return 'Bullet';
-            return 'Unknown'
-        except ValueError:
-            tc_lower = tc_str.lower()
-            if 'classical' in tc_lower: return 'Classical'
-            if 'rapid' in tc_lower: return 'Rapid'
-            if 'blitz' in tc_lower: return 'Blitz'
-            if 'bullet' in tc_lower: return 'Bullet'
-            return 'Unknown'
+        try: base=int(tc_str)
+             if base>=1500: return 'Classical';
+             if base>=480: return 'Rapid';
+             if base>=180: return 'Blitz';
+             if base>0 : return 'Bullet';
+             return 'Unknown'
+        except ValueError: tc_lower=tc_str.lower();
+             if 'classical' in tc_lower: return 'Classical';
+             if 'rapid' in tc_lower: return 'Rapid';
+             if 'blitz' in tc_lower: return 'Blitz';
+             if 'bullet' in tc_lower: return 'Bullet';
+             return 'Unknown'
 
 # =============================================
-# Helper Function: Load ECO to Opening Mapping (Correct from v16)
+# Helper Function: Load ECO to Opening Mapping *** REWRITTEN & CORRECTED ***
 # =============================================
 @st.cache_data
 def load_eco_mapping(csv_path):
-    # (Code identical to v16)
-    try: df_eco=pd.read_csv(csv_path);
-         if "ECO Code" not in df_eco.columns or "Opening Name" not in df_eco.columns: st.error(f"ECO file missing required columns."); return {}
-         eco_map=df_eco.drop_duplicates(subset=['ECO Code']).set_index('ECO Code')['Opening Name'].to_dict(); st.sidebar.success(f"Loaded {len(eco_map)} ECO mappings."); return eco_map
-    except FileNotFoundError: st.sidebar.error(f"ECO mapping file '{csv_path}' not found."); return {}
-    except Exception as e: st.sidebar.error(f"Error loading ECO mapping file: {e}"); return {}
+    """Loads the ECO code to custom opening name mapping from a CSV file."""
+    eco_map = {} # Initialize empty map
+    try:
+        df_eco = pd.read_csv(csv_path)
+        # Check for required columns AFTER reading successfully
+        if "ECO Code" in df_eco.columns and "Opening Name" in df_eco.columns:
+            # Create dictionary if columns are present
+            eco_map = df_eco.drop_duplicates(subset=['ECO Code']).set_index('ECO Code')['Opening Name'].to_dict()
+            st.sidebar.success(f"Loaded {len(eco_map)} ECO mappings from '{csv_path}'.")
+        else:
+            # Columns missing
+            st.sidebar.error(f"ECO mapping file '{csv_path}' missing 'ECO Code' or 'Opening Name' column.")
+            # eco_map remains {}
+
+    except FileNotFoundError:
+        st.sidebar.warning(f"ECO mapping file '{csv_path}' not found. Custom opening names unavailable.")
+        # eco_map remains {}
+    except pd.errors.EmptyDataError:
+         st.sidebar.warning(f"ECO mapping file '{csv_path}' is empty.")
+         # eco_map remains {}
+    except Exception as e:
+        st.sidebar.error(f"Error loading ECO mapping file '{csv_path}': {e}")
+        # eco_map remains {}
+
+    return eco_map # Return the map (either populated or empty)
+
 
 # =============================================
-# API Data Loading and Processing Function (Correct from v16)
+# API Data Loading and Processing Function (Unchanged from v16)
 # =============================================
 @st.cache_data(ttl=3600)
 def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, rated: bool, eco_map: dict):
-    # (Code identical to version 16)
+    # ... (Code identical to version 16 - calls the fixed eco loader) ...
     if not username: st.warning("Please enter a Lichess username."); return pd.DataFrame()
     if not perf_type: st.warning("Please select a game type."); return pd.DataFrame()
     username_lower = username.lower()
@@ -128,6 +144,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
                         if init is not None and incr is not None: tc_str=f"{init}+{incr}"
                         elif speed=='correspondence': tc_str="Correspondence"
                         eco=opening_info.get('eco','Unknown'); op_name_api=opening_info.get('name','Unknown Opening').replace('?','').split(':')[0].strip()
+                        # Use the passed eco_map here
                         op_name_custom=eco_map.get(eco, f"ECO: {eco}" if eco!='Unknown' else 'Unknown Opening')
                         term_map={"mate":"Normal","resign":"Normal","stalemate":"Normal","timeout":"Time forfeit","draw":"Normal","outoftime":"Time forfeit","cheat":"Cheat","noStart":"Aborted","unknownFinish":"Unknown","variantEnd":"Variant End"}
                         term=term_map.get(status,"Unknown")
@@ -139,7 +156,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
                         opp_name_clean=clean_name(opp_name_raw)
                         all_games_data.append({'Date':game_date,'Event':perf,'White':white_name,'Black':black_name,'Result':"1-0" if winner=='white' else ("0-1" if winner=='black' else "1/2-1/2"),'WhiteElo':int(white_rating) if not pd.isna(white_rating) else 0,'BlackElo':int(black_rating) if not pd.isna(black_rating) else 0,'ECO':eco,'OpeningName_API':op_name_api,'OpeningName_Custom':op_name_custom,'TimeControl':tc_str,'Termination':term,'PlyCount':game_data.get('turns',0),'LichessID':game_id,'PlayerID':username,'PlayerColor':player_color,'PlayerElo':int(player_elo),'OpponentName':opp_name_clean,'OpponentNameRaw':opp_name_raw,'OpponentElo':int(opp_elo),'OpponentTitle':opp_title_final,'PlayerResultNumeric':res_num,'PlayerResultString':res_str,'Variant':variant,'Speed':speed,'Status':status,'PerfType':perf})
                     except json.JSONDecodeError: error_counter += 1
-                    except Exception: error_counter += 1
+                    except Exception: error_counter += 1 # Catch other processing errors minimally
     except requests.exceptions.RequestException as e: st.error(f"🚨 API Request Failed: {e}"); return pd.DataFrame()
     except Exception as e: st.error(f"🚨 Unexpected error: {e}"); st.text(traceback.format_exc()); return pd.DataFrame()
     if error_counter > 0: st.warning(f"Skipped {error_counter} entries due to processing errors.")
@@ -153,6 +170,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
         df['PlayerElo'] = df['PlayerElo'].astype(int); df['OpponentElo'] = df['OpponentElo'].astype(int)
         df['EloDiff'] = df['PlayerElo'] - df['OpponentElo']
         df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1) # Calls corrected func
+        # Removed rename for Opening
         df = df.sort_values(by='Date').reset_index(drop=True)
     return df
 
@@ -160,8 +178,8 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
 # =============================================
 # Plotting Functions (Unchanged from v15)
 # =============================================
-# (Insert ALL plotting functions here - code identical to previous version v15)
-# ... plot_win_loss_pie, ..., plot_time_forfeit_by_tc ...
+# (Insert ALL plotting functions here - plot_win_loss_pie, ..., plot_most_frequent_opponents, including time forfeit/month/dom plots)
+# ... (Code identical to previous version v15) ...
 def plot_win_loss_pie(df, display_name):
     if 'PlayerResultString' not in df.columns: return go.Figure()
     result_counts = df['PlayerResultString'].value_counts()
@@ -294,7 +312,6 @@ def plot_win_rate_by_opening(df, min_games=5, top_n=20, opening_col='OpeningName
     fig=px.bar(opening_stats_plot, y=opening_stats_plot.index, x='win_rate', orientation='h', title=f'Top {top_n} Openings by Win Rate (Min {min_games} games, {source_label})', labels={'win_rate':'Win Rate (%)',opening_col:'Opening'}, text='win_rate')
     fig.update_traces(texttemplate='%{text:.1f}%', textposition='inside', marker_color='#009688'); fig.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Win Rate (%)", dragmode=False); return fig
 
-
 # =============================================
 # Helper Functions
 # =============================================
@@ -311,7 +328,7 @@ def filter_and_analyze_time_forfeits(df):
     return tf_games, wins_tf, losses_tf
 
 # =============================================
-# Streamlit App Layout - v17 (Final Syntax Fix, Updated Structure)
+# Streamlit App Layout - v17 (Final Final Syntax Fix)
 # =============================================
 
 # --- Sidebar ---
@@ -350,15 +367,13 @@ if analyze_button and lichess_username:
 
 
 # --- Display Area ---
+# (Code identical to version 15)
 if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_state.analysis_df.empty:
     df = st.session_state.analysis_df
     current_display_name = st.session_state.current_username
     current_perf_type = st.session_state.current_perf_type
-
     st.write(f"Analysis for **{current_display_name}** | Period: **{st.session_state.current_time_period}** | Type: **{current_perf_type.capitalize()}**")
     st.caption(f"Total Rated Games Analyzed: **{len(df):,}**"); st.markdown("---")
-
-    # --- Sidebar Navigation ---
     st.sidebar.title("📊 Analysis Sections")
     analysis_options = [ "1. Overview & General Stats", "2. Performance Over Time", "3. Performance by Color",
                          "4. Time & Date Analysis", "5. ECO & Opening Analysis", "6. Opponent Analysis",
@@ -366,10 +381,7 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
     if 'selected_section' not in st.session_state or st.session_state.selected_section not in analysis_options: st.session_state.selected_section = analysis_options[0]
     selected_section = st.sidebar.selectbox( "Choose section:", analysis_options, index=analysis_options.index(st.session_state.selected_section), key="section_select")
     st.session_state.selected_section = selected_section
-
-    # --- Display Content Based on Selected Section ---
     st.header(selected_section)
-
     if selected_section == analysis_options[0]: # Overview
         st.plotly_chart(plot_win_loss_pie(df, current_display_name), use_container_width=True)
         total_games=len(df); wins=len(df[df['PlayerResultNumeric']==1]); losses=len(df[df['PlayerResultNumeric']==0]); draws=len(df[df['PlayerResultNumeric']==0.5])
@@ -377,14 +389,11 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Games", f"{total_games:,}"); col2.metric("Win Rate", f"{win_rate:.1f}%")
         col3.metric("W|L|D", f"{wins}|{losses}|{draws}"); col4.metric("Avg Opp Elo", f"{avg_opp_elo:.0f}" if not pd.isna(avg_opp_elo) else "N/A")
-
     elif selected_section == analysis_options[1]: # Perf Over Time
         st.plotly_chart(plot_rating_trend(df, current_display_name), use_container_width=True)
-
     elif selected_section == analysis_options[2]: # Perf By Color
          st.plotly_chart(plot_win_loss_by_color(df), use_container_width=True)
-
-    elif selected_section == analysis_options[3]: # Time & Date (Reordered)
+    elif selected_section == analysis_options[3]: # Time & Date
         st.subheader("Performance by Year"); col_y1, col_y2 = st.columns(2);
         with col_y1: st.plotly_chart(plot_games_per_year(df), use_container_width=True); with col_y2: st.plotly_chart(plot_win_rate_per_year(df), use_container_width=True)
         st.subheader("Performance by Month"); col_m1, col_m2 = st.columns(2);
@@ -396,7 +405,6 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         st.subheader("Performance by Day of Month"); col_dom1, col_dom2 = st.columns(2);
         with col_dom1: st.plotly_chart(plot_games_by_dom(df), use_container_width=True); with col_dom2: st.plotly_chart(plot_winrate_by_dom(df), use_container_width=True)
         st.subheader("Performance by Time Control Category"); st.plotly_chart(plot_performance_by_time_control(df), use_container_width=True)
-
     elif selected_section == analysis_options[4]: # ECO & Opening
         st.subheader("Opening Analysis based on Lichess API Names")
         n_openings_api = st.slider("Num top (API):", 5, 50, 15, key="n_openings_freq_api")
@@ -412,7 +420,6 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
              min_games_cust = st.slider("Min games (Custom):", 1, 25, 5, key="min_games_perf_cust")
              n_perf_cust = st.slider("Num by win rate (Custom):", 5, 50, 15, key="n_openings_perf_cust")
              st.plotly_chart(plot_win_rate_by_opening(df, min_games=min_games_cust, top_n=n_perf_cust, opening_col='OpeningName_Custom'), use_container_width=True)
-
     elif selected_section == analysis_options[5]: # Opponent
         st.subheader("Frequent Opponents"); n_opponents_freq = st.slider("Num top opponents:", 5, 50, 20, key="n_opponents_freq_opp")
         st.plotly_chart(plot_most_frequent_opponents(df, top_n=n_opponents_freq), use_container_width=True)
@@ -420,10 +427,9 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         try: st.dataframe(df[df['OpponentName'] != 'Unknown']['OpponentName'].value_counts().reset_index(name='Games').head(n_opponents_freq))
         except KeyError: st.warning("Could not generate table.")
         st.subheader("Performance vs Opponent Elo"); st.plotly_chart(plot_performance_vs_opponent_elo(df), use_container_width=True)
-
     elif selected_section == analysis_options[6]: # vs Titled
         st.subheader("Filter by Opponent Title")
-        with st.expander("Show Opponent Title Distribution in Data"): st.dataframe(df['OpponentTitle'].value_counts())
+        with st.expander("Show Opponent Title Distribution"): st.dataframe(df['OpponentTitle'].value_counts())
         selected_titles = st.multiselect("Select Opponent Titles:", TITLES_TO_ANALYZE, default=['GM','IM'])
         if selected_titles:
             titled_games = filter_and_analyze_titled(df, selected_titles)
@@ -433,7 +439,6 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
                 st.plotly_chart(plot_opening_frequency(titled_games, top_n=15, opening_col='OpeningName_API'), use_container_width=True); st.plotly_chart(plot_most_frequent_opponents(titled_games, top_n=15), use_container_width=True)
             else: st.warning(f"ℹ️ No games found vs {', '.join(selected_titles)}.")
         else: st.info("Select title(s) for analysis.")
-
     elif selected_section == analysis_options[7]: # Termination
         st.subheader("Time Forfeit Analysis"); tf_games, wins_tf, losses_tf = filter_and_analyze_time_forfeits(df)
         if not tf_games.empty:
@@ -443,10 +448,7 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
         st.subheader("Overall Termination Types"); termination_counts = df['Termination'].value_counts()
         fig_term = px.bar(termination_counts, x=termination_counts.index, y=termination_counts.values, title="Game Termination Reasons", labels={'x':'Reason','y':'Count'}, text=termination_counts.values)
         fig_term.update_layout(dragmode=False); fig_term.update_traces(textposition='outside'); st.plotly_chart(fig_term, use_container_width=True)
-
     st.sidebar.markdown("---"); st.sidebar.info(f"Analysis for {current_display_name}.")
-
 elif not analyze_button and st.session_state.analysis_df is None: st.info("☝️ Configure settings and click 'Analyze Games'.")
 elif analyze_button and (not isinstance(st.session_state.analysis_df, pd.DataFrame) or st.session_state.analysis_df.empty): st.warning("No analysis data generated. Check settings.")
-
 # --- End of App ---
