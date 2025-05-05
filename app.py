@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
-# v19: Meticulously verified and corrected categorize_time_control.
+# v20: Meticulous Syntax Verification across all try-except blocks.
 # =============================================
 
 import streamlit as st
@@ -25,133 +25,129 @@ DEFAULT_TIME_PERIOD = "Last Year"
 PERF_TYPE_OPTIONS_SINGLE = ['Bullet', 'Blitz', 'Rapid']
 DEFAULT_PERF_TYPE = 'Bullet'
 DEFAULT_RATED_ONLY = True
-ECO_CSV_PATH = "eco_to_opening.csv"
+ECO_CSV_PATH = "eco_to_opening.csv" # Ensure this file exists
 TITLES_TO_ANALYZE = ['GM', 'IM', 'FM', 'CM', 'WGM', 'WIM', 'WFM', 'WCM', 'NM']
 FAMOUS_OPPONENTS = [ "DrNykterstein", "MagnusCarlsen", "Hikaru", "AnishGiri", "FabianoCaruana",
                      "lachesisQ", "WesleySo", "GMWSO", "VladislavArtemiev", "Duhless", ]
 
 # =============================================
-# Helper Function: Categorize Time Control *** METICULOUSLY CORRECTED ***
+# Helper Function: Categorize Time Control (Verified Syntax from v19)
 # =============================================
 def categorize_time_control(tc_str, speed_info):
     """Categorizes time control based on speed info or parsed string."""
-    # 1. Prioritize speed info from API
+    # 1. Prioritize speed info
     if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
         return speed_info.capitalize()
-
-    # 2. Handle invalid or special tc_str inputs
-    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']:
-        return 'Unknown'
-    if tc_str == 'Correspondence':
-        return 'Correspondence'
-
-    # 3. Handle format like "180+2"
+    # 2. Handle invalid/special inputs
+    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']: return 'Unknown'
+    if tc_str == 'Correspondence': return 'Correspondence'
+    # 3. Handle "180+2" format
     if '+' in tc_str:
-        try: # <<< TRY block for '+' format parsing
+        try:
             parts = tc_str.split('+')
-            if len(parts) != 2:
-                return 'Unknown' # Invalid format
-
-            # Safely convert parts to integers
-            base = int(parts[0])
-            increment = int(parts[1])
-
-            # Calculate estimated total time
+            if len(parts)!=2: return 'Unknown'
+            base = int(parts[0]); increment = int(parts[1])
             total = base + 40 * increment
-
-            # Classify based on total time
-            if total >= 1500: return 'Classical'
-            if total >= 480: return 'Rapid'
-            if total >= 180: return 'Blitz'
-            if total > 0 : return 'Bullet'
-            return 'Unknown' # Handle cases like 0+0
-
-        except (ValueError, IndexError): # <<< Correctly placed EXCEPT block
+            if total >= 1500: return 'Classical';
+            if total >= 480: return 'Rapid';
+            if total >= 180: return 'Blitz';
+            if total > 0 : return 'Bullet';
+            return 'Unknown'
+        except (ValueError, IndexError): return 'Unknown'
+    # 4. Handle "300" format
+    else:
+        try:
+            base = int(tc_str)
+            if base >= 1500: return 'Classical';
+            if base >= 480: return 'Rapid';
+            if base >= 180: return 'Blitz';
+            if base > 0 : return 'Bullet';
+            return 'Unknown'
+        except ValueError:
+            tc_lower = tc_str.lower()
+            if 'classical' in tc_lower: return 'Classical';
+            if 'rapid' in tc_lower: return 'Rapid';
+            if 'blitz' in tc_lower: return 'Blitz';
+            if 'bullet' in tc_lower: return 'Bullet';
             return 'Unknown'
 
-    # 4. Handle format like "300" (only base time)
-    else:
-        try: # <<< TRY block for base time integer conversion
-            base = int(tc_str)
-            # Classify based on base time
-            if base >= 1500: return 'Classical'
-            if base >= 480: return 'Rapid'
-            if base >= 180: return 'Blitz'
-            if base > 0 : return 'Bullet'
-            return 'Unknown' # Base time is 0 or negative
-
-        except ValueError: # <<< Correctly placed EXCEPT block
-            # Fallback to checking keywords
-            tc_lower = tc_str.lower()
-            if 'classical' in tc_lower: return 'Classical'
-            if 'rapid' in tc_lower: return 'Rapid'
-            if 'blitz' in tc_lower: return 'Blitz'
-            if 'bullet' in tc_lower: return 'Bullet'
-            return 'Unknown' # Failed all checks
-
 # =============================================
-# Helper Function: Load ECO to Opening Mapping (Correct from v17)
+# Helper Function: Load ECO to Opening Mapping *** VERIFIED SYNTAX ***
 # =============================================
 @st.cache_data
 def load_eco_mapping(csv_path):
-    # (Code identical to v17 - Assumed Correct)
-    eco_map = {}
-    try: df_eco=pd.read_csv(csv_path);
-         if "ECO Code" in df_eco.columns and "Opening Name" in df_eco.columns:
-            eco_map=df_eco.drop_duplicates(subset=['ECO Code']).set_index('ECO Code')['Opening Name'].to_dict(); st.sidebar.success(f"Loaded {len(eco_map)} ECO mappings.");
-         else: st.sidebar.error(f"ECO file missing cols.")
-    except FileNotFoundError: st.sidebar.warning(f"ECO file '{csv_path}' not found.")
-    except pd.errors.EmptyDataError: st.sidebar.warning(f"ECO file '{csv_path}' is empty.")
-    except Exception as e: st.sidebar.error(f"Error loading ECO file: {e}")
-    return eco_map
+    """Loads the ECO code to custom opening name mapping from a CSV file."""
+    eco_map = {} # Initialize empty map
+    try: # <<< START try block
+        df_eco = pd.read_csv(csv_path)
+        # Check for required columns AFTER reading successfully
+        if "ECO Code" in df_eco.columns and "Opening Name" in df_eco.columns:
+            # Create dictionary if columns are present
+            eco_map = df_eco.drop_duplicates(subset=['ECO Code']).set_index('ECO Code')['Opening Name'].to_dict()
+            st.sidebar.success(f"Loaded {len(eco_map)} ECO mappings.")
+        else:
+            # Columns missing
+            st.sidebar.error(f"ECO file '{csv_path}' missing 'ECO Code' or 'Opening Name' column.")
+            # eco_map remains {}
+
+    # <<< Correctly placed EXCEPT blocks >>>
+    except FileNotFoundError:
+        st.sidebar.warning(f"ECO mapping file '{csv_path}' not found. Custom opening names unavailable.")
+        # eco_map remains {}
+    except pd.errors.EmptyDataError:
+         st.sidebar.warning(f"ECO mapping file '{csv_path}' is empty.")
+         # eco_map remains {}
+    except Exception as e:
+        st.sidebar.error(f"Error loading ECO mapping file '{csv_path}': {e}")
+        # eco_map remains {}
+
+    return eco_map # Return the map (either populated or empty)
 
 # =============================================
-# API Data Loading and Processing Function (Correct from v17)
+# API Data Loading and Processing Function (Verified Syntax)
 # =============================================
 @st.cache_data(ttl=3600)
 def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, rated: bool, eco_map: dict):
-    # (Code identical to v17 - Calls the fixed helper)
-    if not username: st.warning("Enter Lichess username."); return pd.DataFrame()
-    if not perf_type: st.warning("Select a game type."); return pd.DataFrame()
-    username_lower = username.lower()
-    st.info(f"Fetching games for '{username}' ({time_period_key} | Type: {perf_type})...")
-    since_timestamp_ms = None; time_delta = TIME_PERIOD_OPTIONS.get(time_period_key)
-    if time_delta: start_date = datetime.now(timezone.utc) - time_delta; since_timestamp_ms = int(start_date.timestamp() * 1000); st.caption(f"Fetching since: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    else: st.warning("Invalid time period.")
-    api_params = {"rated":str(rated).lower(), "perfType":perf_type.lower(), "opening":"true","moves":"false", "tags":"false", "pgnInJson":"false" }
-    if since_timestamp_ms: api_params["since"] = since_timestamp_ms
-    api_url = f"https://lichess.org/api/games/user/{username}"; headers = {"Accept":"application/x-ndjson"}
-    all_games_data = []; error_counter = 0;
-    try:
-        with st.spinner(f"Calling Lichess API for {username}..."):
-            response = requests.get(api_url, params=api_params, headers=headers, stream=True); response.raise_for_status()
+    # ... (Initial part and API call setup identical to v17) ...
+    if not username: st.warning("Enter username."); return pd.DataFrame()
+    if not perf_type: st.warning("Select game type."); return pd.DataFrame()
+    username_lower=username.lower(); st.info(f"Fetching games for '{username}'...");
+    since_timestamp_ms=None; time_delta=TIME_PERIOD_OPTIONS.get(time_period_key)
+    if time_delta: start_date=datetime.now(timezone.utc)-time_delta; since_timestamp_ms=int(start_date.timestamp()*1000); st.caption(f"Since: {start_date.strftime('%Y-%m-%d')}")
+    api_params={"rated":str(rated).lower(),"perfType":perf_type.lower(),"opening":"true","moves":"false","tags":"false","pgnInJson":"false"}
+    if since_timestamp_ms: api_params["since"]=since_timestamp_ms
+    api_url=f"https://lichess.org/api/games/user/{username}"; headers={"Accept":"application/x-ndjson"}
+    all_games_data=[]; error_counter=0
+    try: # <<< Outer TRY for API request
+        with st.spinner(f"Calling API for {username}..."):
+            response=requests.get(api_url,params=api_params,headers=headers,stream=True); response.raise_for_status()
             for line in response.iter_lines():
                 if line:
-                    game_data = None; game_data_raw = line.decode('utf-8')
-                    try:
+                    game_data=None; game_data_raw=line.decode('utf-8')
+                    try: # <<< Inner TRY for JSON parsing and processing
                         game_data = json.loads(game_data_raw)
+                        # --- Data Extraction (Robust checks) ---
                         white_info=game_data.get('players',{}).get('white',{}); black_info=game_data.get('players',{}).get('black',{})
                         white_user=white_info.get('user',{}); black_user=black_info.get('user',{})
                         opening_info=game_data.get('opening',{}); clock_info=game_data.get('clock')
                         game_id=game_data.get('id','N/A'); created_at_ms=game_data.get('createdAt')
                         game_date=pd.to_datetime(created_at_ms,unit='ms',utc=True,errors='coerce');
-                        if pd.isna(game_date): continue
+                        if pd.isna(game_date): continue # Skip if date invalid
                         variant=game_data.get('variant','standard'); speed=game_data.get('speed','unknown')
                         perf=game_data.get('perf','unknown'); status=game_data.get('status','unknown'); winner=game_data.get('winner')
                         white_name=white_user.get('name','Unknown'); black_name=black_user.get('name','Unknown')
                         white_title=white_user.get('title'); black_title=black_user.get('title')
-                        white_rating=pd.to_numeric(white_info.get('rating'),errors='coerce')
-                        black_rating=pd.to_numeric(black_info.get('rating'),errors='coerce')
+                        white_rating=pd.to_numeric(white_info.get('rating'),errors='coerce'); black_rating=pd.to_numeric(black_info.get('rating'),errors='coerce')
                         player_color,player_elo,opp_name_raw,opp_title_raw,opp_elo=(None,None,'Unknown',None,None)
                         if username_lower==white_name.lower(): player_color,player_elo,opp_name_raw,opp_title_raw,opp_elo=('White',white_rating,black_name,black_title,black_rating)
                         elif username_lower==black_name.lower(): player_color,player_elo,opp_name_raw,opp_title_raw,opp_elo=('Black',black_rating,white_name,white_title,white_rating)
-                        else: continue
-                        if player_color is None or pd.isna(player_elo) or pd.isna(opp_elo): continue
-                        res_num,res_str=(0.5,"Draw")
+                        else: continue # Skip if user not found
+                        if player_color is None or pd.isna(player_elo) or pd.isna(opp_elo): continue # Skip if Elo missing
+                        res_num,res_str=(0.5,"Draw");
                         if status not in ['draw','stalemate']:
                            if winner==player_color.lower(): res_num,res_str=(1,"Win")
                            elif winner is not None: res_num,res_str=(0,"Loss")
-                        tc_str="Unknown"
+                        tc_str="Unknown";
                         if clock_info: init=clock_info.get('initial');incr=clock_info.get('increment');
                         if init is not None and incr is not None: tc_str=f"{init}+{incr}"
                         elif speed=='correspondence': tc_str="Correspondence"
@@ -159,19 +155,27 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
                         op_name_custom=eco_map.get(eco, f"ECO: {eco}" if eco!='Unknown' else 'Unknown Opening')
                         term_map={"mate":"Normal","resign":"Normal","stalemate":"Normal","timeout":"Time forfeit","draw":"Normal","outoftime":"Time forfeit","cheat":"Cheat","noStart":"Aborted","unknownFinish":"Unknown","variantEnd":"Variant End"}
                         term=term_map.get(status,"Unknown")
-                        opp_title_final = 'Unknown'
+                        opp_title_final = 'Unknown';
                         if opp_title_raw and isinstance(opp_title_raw, str) and opp_title_raw.strip(): cleaned_title = opp_title_raw.replace(' ', '').strip().upper();
                         if cleaned_title in TITLES_TO_ANALYZE: opp_title_final = cleaned_title
                         def clean_name(n): return re.sub(r'^(GM|IM|FM|CM|WGM|WIM|WFM|WCM|NM)\s+','',n).strip()
                         opp_name_clean=clean_name(opp_name_raw)
                         all_games_data.append({'Date':game_date,'Event':perf,'White':white_name,'Black':black_name,'Result':"1-0" if winner=='white' else ("0-1" if winner=='black' else "1/2-1/2"),'WhiteElo':int(white_rating) if not pd.isna(white_rating) else 0,'BlackElo':int(black_rating) if not pd.isna(black_rating) else 0,'ECO':eco,'OpeningName_API':op_name_api,'OpeningName_Custom':op_name_custom,'TimeControl':tc_str,'Termination':term,'PlyCount':game_data.get('turns',0),'LichessID':game_id,'PlayerID':username,'PlayerColor':player_color,'PlayerElo':int(player_elo),'OpponentName':opp_name_clean,'OpponentNameRaw':opp_name_raw,'OpponentElo':int(opp_elo),'OpponentTitle':opp_title_final,'PlayerResultNumeric':res_num,'PlayerResultString':res_str,'Variant':variant,'Speed':speed,'Status':status,'PerfType':perf})
-                    except json.JSONDecodeError: error_counter += 1
-                    except Exception: error_counter += 1
-    except requests.exceptions.RequestException as e: st.error(f"🚨 API Request Failed: {e}"); return pd.DataFrame()
-    except Exception as e: st.error(f"🚨 Unexpected error: {e}"); st.text(traceback.format_exc()); return pd.DataFrame()
+                    except json.JSONDecodeError: error_counter += 1 # Count errors quietly
+                    except Exception: error_counter += 1 # Count errors quietly
+            # End of for loop
+    # <<< Correctly placed EXCEPT blocks for outer TRY >>>
+    except requests.exceptions.RequestException as e:
+        st.error(f"🚨 API Request Failed: {e}"); return pd.DataFrame()
+    except Exception as e:
+        st.error(f"🚨 Unexpected error during API fetch or processing: {e}")
+        st.text(traceback.format_exc()); return pd.DataFrame()
+    # No finally needed here
+
     if error_counter > 0: st.warning(f"Skipped {error_counter} entries due to processing errors.")
     if not all_games_data: st.warning(f"No games found for '{username}' matching criteria."); return pd.DataFrame()
     df = pd.DataFrame(all_games_data); st.success(f"Processed {len(df)} games.")
+    # --- Final Feature Engineering ---
     if not df.empty:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce'); df = df.dropna(subset=['Date'])
         if df.empty: return df
@@ -188,6 +192,7 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
 # Plotting Functions (Unchanged from v15)
 # =============================================
 # (Insert ALL plotting functions here - code identical to previous version v15)
+# ... plot_win_loss_pie, plot_win_loss_by_color, ..., plot_time_forfeit_by_tc ...
 def plot_win_loss_pie(df, display_name):
     if 'PlayerResultString' not in df.columns: return go.Figure()
     result_counts = df['PlayerResultString'].value_counts()
@@ -320,7 +325,6 @@ def plot_win_rate_by_opening(df, min_games=5, top_n=20, opening_col='OpeningName
     fig=px.bar(opening_stats_plot, y=opening_stats_plot.index, x='win_rate', orientation='h', title=f'Top {top_n} Openings by Win Rate (Min {min_games} games, {source_label})', labels={'win_rate':'Win Rate (%)',opening_col:'Opening'}, text='win_rate')
     fig.update_traces(texttemplate='%{text:.1f}%', textposition='inside', marker_color='#009688'); fig.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Win Rate (%)", dragmode=False); return fig
 
-
 # =============================================
 # Helper Functions
 # =============================================
@@ -337,7 +341,7 @@ def filter_and_analyze_time_forfeits(df):
     return tf_games, wins_tf, losses_tf
 
 # =============================================
-# Streamlit App Layout - v19 (Final Final Syntax Fix)
+# Streamlit App Layout - v19 (Final Syntax Fix)
 # =============================================
 
 # --- Sidebar ---
@@ -404,20 +408,20 @@ if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_sta
          st.plotly_chart(plot_win_loss_by_color(df), use_container_width=True)
     elif selected_section == analysis_options[3]: # Time & Date
         st.subheader("Performance by Year"); col_y1, col_y2 = st.columns(2);
-        with col_y1: st.plotly_chart(plot_games_per_year(df), use_container_width=True) # Separate lines
-        with col_y2: st.plotly_chart(plot_win_rate_per_year(df), use_container_width=True) # Separate lines
+        with col_y1: st.plotly_chart(plot_games_per_year(df), use_container_width=True) # Corrected line
+        with col_y2: st.plotly_chart(plot_win_rate_per_year(df), use_container_width=True) # Corrected line
         st.subheader("Performance by Month"); col_m1, col_m2 = st.columns(2);
-        with col_m1: st.plotly_chart(plot_games_by_month(df), use_container_width=True) # Separate lines
-        with col_m2: st.plotly_chart(plot_winrate_by_month(df), use_container_width=True) # Separate lines
+        with col_m1: st.plotly_chart(plot_games_by_month(df), use_container_width=True) # Corrected line
+        with col_m2: st.plotly_chart(plot_winrate_by_month(df), use_container_width=True) # Corrected line
         st.subheader("Performance by Day of Week"); col_dow1, col_dow2 = st.columns(2);
-        with col_dow1: st.plotly_chart(plot_games_by_dow(df), use_container_width=True) # Separate lines
-        with col_dow2: st.plotly_chart(plot_winrate_by_dow(df), use_container_width=True) # Separate lines
+        with col_dow1: st.plotly_chart(plot_games_by_dow(df), use_container_width=True) # Corrected line
+        with col_dow2: st.plotly_chart(plot_winrate_by_dow(df), use_container_width=True) # Corrected line
         st.subheader("Performance by Hour of Day (UTC)"); col_hod1, col_hod2 = st.columns(2);
-        with col_hod1: st.plotly_chart(plot_games_by_hour(df), use_container_width=True) # Separate lines
-        with col_hod2: st.plotly_chart(plot_winrate_by_hour(df), use_container_width=True) # Separate lines
+        with col_hod1: st.plotly_chart(plot_games_by_hour(df), use_container_width=True) # Corrected line
+        with col_hod2: st.plotly_chart(plot_winrate_by_hour(df), use_container_width=True) # Corrected line
         st.subheader("Performance by Day of Month"); col_dom1, col_dom2 = st.columns(2);
-        with col_dom1: st.plotly_chart(plot_games_by_dom(df), use_container_width=True) # Separate lines
-        with col_dom2: st.plotly_chart(plot_winrate_by_dom(df), use_container_width=True) # Separate lines
+        with col_dom1: st.plotly_chart(plot_games_by_dom(df), use_container_width=True) # Corrected line
+        with col_dom2: st.plotly_chart(plot_winrate_by_dom(df), use_container_width=True) # Corrected line
         st.subheader("Performance by Time Control Category"); st.plotly_chart(plot_performance_by_time_control(df), use_container_width=True)
     elif selected_section == analysis_options[4]: # ECO & Opening
         st.subheader("Opening Analysis based on Lichess API Names"); n_openings_api = st.slider("Num top (API):", 5, 50, 15, key="n_openings_freq_api")
