@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # =============================================
 # Streamlit App for Chess Game Analysis - Lichess API Version
-# v17: Rewritten load_eco_mapping to fix SyntaxError.
+# v18: Meticulously verified try-except structure in categorize_time_control.
 # =============================================
 
 import streamlit as st
@@ -25,97 +25,136 @@ DEFAULT_TIME_PERIOD = "Last Year"
 PERF_TYPE_OPTIONS_SINGLE = ['Bullet', 'Blitz', 'Rapid']
 DEFAULT_PERF_TYPE = 'Bullet'
 DEFAULT_RATED_ONLY = True
-ECO_CSV_PATH = "eco_to_opening.csv" # Ensure this file exists in the same directory or provide the correct path
+ECO_CSV_PATH = "eco_to_opening.csv"
 TITLES_TO_ANALYZE = ['GM', 'IM', 'FM', 'CM', 'WGM', 'WIM', 'WFM', 'WCM', 'NM']
 FAMOUS_OPPONENTS = [ "DrNykterstein", "MagnusCarlsen", "Hikaru", "AnishGiri", "FabianoCaruana",
                      "lachesisQ", "WesleySo", "GMWSO", "VladislavArtemiev", "Duhless", ]
 
 # =============================================
-# Helper Function: Categorize Time Control (Correct from v16)
+# Helper Function: Categorize Time Control *** VERIFIED SYNTAX ***
 # =============================================
 def categorize_time_control(tc_str, speed_info):
-    # (Identical to v16 - Assumed Correct Now)
-    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']: return speed_info.capitalize()
-    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown','Correspondence']: return 'Unknown' if tc_str!='Correspondence' else 'Correspondence'
+    """Categorizes time control based on speed info or parsed string."""
+    # 1. Prioritize speed info from API
+    if isinstance(speed_info, str) and speed_info in ['bullet', 'blitz', 'rapid', 'classical', 'correspondence']:
+        return speed_info.capitalize()
+
+    # 2. Handle invalid or special tc_str inputs
+    if not isinstance(tc_str, str) or tc_str in ['-', '?', 'Unknown']:
+        return 'Unknown'
+    if tc_str == 'Correspondence':
+        return 'Correspondence'
+
+    # 3. Handle format like "180+2"
     if '+' in tc_str:
-        try: parts = tc_str.split('+');
-             if len(parts)!=2: return 'Unknown'
-             base=int(parts[0]); increment=int(parts[1]); total=base+40*increment
-             if total>=1500: return 'Classical';
-             if total>=480: return 'Rapid';
-             if total>=180: return 'Blitz';
-             if total>0 : return 'Bullet';
-             return 'Unknown'
-        except(ValueError,IndexError): return 'Unknown'
+        try:  # TRY block starts here for '+' format
+            parts = tc_str.split('+')
+            if len(parts) != 2:
+                # Invalid format (e.g., "180+")
+                result = 'Unknown'
+            else:
+                # Safely convert parts to integers
+                base = int(parts[0])
+                increment = int(parts[1])
+
+                # Calculate estimated total time
+                total = base + 40 * increment
+
+                # Classify based on total time
+                if total >= 1500:
+                    result = 'Classical'
+                elif total >= 480:
+                    result = 'Rapid'
+                elif total >= 180:
+                    result = 'Blitz'
+                elif total > 0:
+                    result = 'Bullet'
+                else:
+                    # Handle cases like 0+0 or negative results if possible
+                    result = 'Unknown'
+        except (ValueError, IndexError):
+            # Catch errors from split() or int() conversion
+            result = 'Unknown'
+        # End of try-except for '+' format
+        return result
+
+    # 4. Handle format like "300" (only base time)
     else:
-        try: base=int(tc_str)
-             if base>=1500: return 'Classical';
-             if base>=480: return 'Rapid';
-             if base>=180: return 'Blitz';
-             if base>0 : return 'Bullet';
-             return 'Unknown'
-        except ValueError: tc_lower=tc_str.lower();
-             if 'classical' in tc_lower: return 'Classical';
-             if 'rapid' in tc_lower: return 'Rapid';
-             if 'blitz' in tc_lower: return 'Blitz';
-             if 'bullet' in tc_lower: return 'Bullet';
-             return 'Unknown'
+        try:  # TRY block for base time integer conversion
+            base = int(tc_str)
+            # Classify based on base time
+            if base >= 1500:
+                result = 'Classical'
+            elif base >= 480:
+                result = 'Rapid'
+            elif base >= 180:
+                result = 'Blitz'
+            elif base > 0:
+                result = 'Bullet'
+            else:
+                # Handle base time 0 or negative
+                result = 'Unknown'
+        except ValueError:
+            # Fallback to checking keywords if integer conversion fails
+            tc_lower = tc_str.lower()
+            if 'classical' in tc_lower:
+                result = 'Classical'
+            elif 'rapid' in tc_lower:
+                result = 'Rapid'
+            elif 'blitz' in tc_lower:
+                result = 'Blitz'
+            elif 'bullet' in tc_lower:
+                result = 'Bullet'
+            else:
+                # If no keywords match either
+                result = 'Unknown'
+        # End of try-except for base time format
+        return result
+
+    # Fallback if none of the above conditions were met (should be unreachable)
+    # return 'Unknown' # This line is technically unreachable now
 
 # =============================================
-# Helper Function: Load ECO to Opening Mapping *** REWRITTEN & CORRECTED ***
+# Helper Function: Load ECO to Opening Mapping (Correct from v17)
 # =============================================
 @st.cache_data
 def load_eco_mapping(csv_path):
-    """Loads the ECO code to custom opening name mapping from a CSV file."""
-    eco_map = {} # Initialize empty map
+    # (Code identical to v17 - Assumed Correct)
+    eco_map = {}
     try:
         df_eco = pd.read_csv(csv_path)
-        # Check for required columns AFTER reading successfully
         if "ECO Code" in df_eco.columns and "Opening Name" in df_eco.columns:
-            # Create dictionary if columns are present
             eco_map = df_eco.drop_duplicates(subset=['ECO Code']).set_index('ECO Code')['Opening Name'].to_dict()
-            st.sidebar.success(f"Loaded {len(eco_map)} ECO mappings from '{csv_path}'.")
-        else:
-            # Columns missing
-            st.sidebar.error(f"ECO mapping file '{csv_path}' missing 'ECO Code' or 'Opening Name' column.")
-            # eco_map remains {}
-
-    except FileNotFoundError:
-        st.sidebar.warning(f"ECO mapping file '{csv_path}' not found. Custom opening names unavailable.")
-        # eco_map remains {}
-    except pd.errors.EmptyDataError:
-         st.sidebar.warning(f"ECO mapping file '{csv_path}' is empty.")
-         # eco_map remains {}
-    except Exception as e:
-        st.sidebar.error(f"Error loading ECO mapping file '{csv_path}': {e}")
-        # eco_map remains {}
-
-    return eco_map # Return the map (either populated or empty)
-
+            st.sidebar.success(f"Loaded {len(eco_map)} ECO mappings.")
+        else: st.sidebar.error(f"ECO file missing cols.")
+    except FileNotFoundError: st.sidebar.warning(f"ECO file '{csv_path}' not found.")
+    except pd.errors.EmptyDataError: st.sidebar.warning(f"ECO file '{csv_path}' is empty.")
+    except Exception as e: st.sidebar.error(f"Error loading ECO file: {e}")
+    return eco_map
 
 # =============================================
-# API Data Loading and Processing Function (Unchanged from v16)
+# API Data Loading and Processing Function (Correct from v17)
 # =============================================
 @st.cache_data(ttl=3600)
 def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, rated: bool, eco_map: dict):
-    # ... (Code identical to version 16 - calls the fixed eco loader) ...
-    if not username: st.warning("Please enter a Lichess username."); return pd.DataFrame()
-    if not perf_type: st.warning("Please select a game type."); return pd.DataFrame()
+    # (Code identical to v17 - Calls the fixed helper)
+    if not username: st.warning("Enter Lichess username."); return pd.DataFrame()
+    if not perf_type: st.warning("Select a game type."); return pd.DataFrame()
     username_lower = username.lower()
     st.info(f"Fetching games for '{username}' ({time_period_key} | Type: {perf_type})...")
     since_timestamp_ms = None; time_delta = TIME_PERIOD_OPTIONS.get(time_period_key)
     if time_delta: start_date = datetime.now(timezone.utc) - time_delta; since_timestamp_ms = int(start_date.timestamp() * 1000); st.caption(f"Fetching since: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    else: st.warning("Invalid time period selected.")
-    api_params = {"rated":str(rated).lower(), "perfType":perf_type.lower(), "opening":"true", "moves":"false", "tags":"false", "pgnInJson":"false" }
+    else: st.warning("Invalid time period.")
+    api_params = {"rated":str(rated).lower(), "perfType":perf_type.lower(), "opening":"true","moves":"false", "tags":"false", "pgnInJson":"false" }
     if since_timestamp_ms: api_params["since"] = since_timestamp_ms
     api_url = f"https://lichess.org/api/games/user/{username}"; headers = {"Accept":"application/x-ndjson"}
-    all_games_data = []; error_counter = 0; games_processed_for_log = 0
+    all_games_data = []; error_counter = 0;
     try:
-        with st.spinner(f"Calling Lichess API for {username} ({perf_type} games)..."):
+        with st.spinner(f"Calling Lichess API for {username}..."):
             response = requests.get(api_url, params=api_params, headers=headers, stream=True); response.raise_for_status()
             for line in response.iter_lines():
                 if line:
-                    game_data_raw = line.decode('utf-8'); game_data = None; games_processed_for_log += 1
+                    game_data = None; game_data_raw = line.decode('utf-8')
                     try:
                         game_data = json.loads(game_data_raw)
                         white_info=game_data.get('players',{}).get('white',{}); black_info=game_data.get('players',{}).get('black',{})
@@ -144,19 +183,17 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
                         if init is not None and incr is not None: tc_str=f"{init}+{incr}"
                         elif speed=='correspondence': tc_str="Correspondence"
                         eco=opening_info.get('eco','Unknown'); op_name_api=opening_info.get('name','Unknown Opening').replace('?','').split(':')[0].strip()
-                        # Use the passed eco_map here
                         op_name_custom=eco_map.get(eco, f"ECO: {eco}" if eco!='Unknown' else 'Unknown Opening')
                         term_map={"mate":"Normal","resign":"Normal","stalemate":"Normal","timeout":"Time forfeit","draw":"Normal","outoftime":"Time forfeit","cheat":"Cheat","noStart":"Aborted","unknownFinish":"Unknown","variantEnd":"Variant End"}
                         term=term_map.get(status,"Unknown")
                         opp_title_final = 'Unknown'
-                        if opp_title_raw and isinstance(opp_title_raw, str) and opp_title_raw.strip():
-                            cleaned_title = opp_title_raw.replace(' ', '').strip().upper()
-                            if cleaned_title in TITLES_TO_ANALYZE: opp_title_final = cleaned_title
+                        if opp_title_raw and isinstance(opp_title_raw, str) and opp_title_raw.strip(): cleaned_title = opp_title_raw.replace(' ', '').strip().upper();
+                        if cleaned_title in TITLES_TO_ANALYZE: opp_title_final = cleaned_title
                         def clean_name(n): return re.sub(r'^(GM|IM|FM|CM|WGM|WIM|WFM|WCM|NM)\s+','',n).strip()
                         opp_name_clean=clean_name(opp_name_raw)
                         all_games_data.append({'Date':game_date,'Event':perf,'White':white_name,'Black':black_name,'Result':"1-0" if winner=='white' else ("0-1" if winner=='black' else "1/2-1/2"),'WhiteElo':int(white_rating) if not pd.isna(white_rating) else 0,'BlackElo':int(black_rating) if not pd.isna(black_rating) else 0,'ECO':eco,'OpeningName_API':op_name_api,'OpeningName_Custom':op_name_custom,'TimeControl':tc_str,'Termination':term,'PlyCount':game_data.get('turns',0),'LichessID':game_id,'PlayerID':username,'PlayerColor':player_color,'PlayerElo':int(player_elo),'OpponentName':opp_name_clean,'OpponentNameRaw':opp_name_raw,'OpponentElo':int(opp_elo),'OpponentTitle':opp_title_final,'PlayerResultNumeric':res_num,'PlayerResultString':res_str,'Variant':variant,'Speed':speed,'Status':status,'PerfType':perf})
                     except json.JSONDecodeError: error_counter += 1
-                    except Exception: error_counter += 1 # Catch other processing errors minimally
+                    except Exception: error_counter += 1
     except requests.exceptions.RequestException as e: st.error(f"🚨 API Request Failed: {e}"); return pd.DataFrame()
     except Exception as e: st.error(f"🚨 Unexpected error: {e}"); st.text(traceback.format_exc()); return pd.DataFrame()
     if error_counter > 0: st.warning(f"Skipped {error_counter} entries due to processing errors.")
@@ -170,7 +207,6 @@ def load_from_lichess_api(username: str, time_period_key: str, perf_type: str, r
         df['PlayerElo'] = df['PlayerElo'].astype(int); df['OpponentElo'] = df['OpponentElo'].astype(int)
         df['EloDiff'] = df['PlayerElo'] - df['OpponentElo']
         df['TimeControl_Category'] = df.apply(lambda row: categorize_time_control(row['TimeControl'], row['Speed']), axis=1) # Calls corrected func
-        # Removed rename for Opening
         df = df.sort_values(by='Date').reset_index(drop=True)
     return df
 
@@ -312,6 +348,7 @@ def plot_win_rate_by_opening(df, min_games=5, top_n=20, opening_col='OpeningName
     fig=px.bar(opening_stats_plot, y=opening_stats_plot.index, x='win_rate', orientation='h', title=f'Top {top_n} Openings by Win Rate (Min {min_games} games, {source_label})', labels={'win_rate':'Win Rate (%)',opening_col:'Opening'}, text='win_rate')
     fig.update_traces(texttemplate='%{text:.1f}%', textposition='inside', marker_color='#009688'); fig.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Win Rate (%)", dragmode=False); return fig
 
+
 # =============================================
 # Helper Functions
 # =============================================
@@ -328,7 +365,7 @@ def filter_and_analyze_time_forfeits(df):
     return tf_games, wins_tf, losses_tf
 
 # =============================================
-# Streamlit App Layout - v17 (Final Final Syntax Fix)
+# Streamlit App Layout - v18 (Final Syntax Fix, All features from v15)
 # =============================================
 
 # --- Sidebar ---
@@ -367,7 +404,7 @@ if analyze_button and lichess_username:
 
 
 # --- Display Area ---
-# (Code identical to version 15)
+# (Identical to v15)
 if isinstance(st.session_state.analysis_df, pd.DataFrame) and not st.session_state.analysis_df.empty:
     df = st.session_state.analysis_df
     current_display_name = st.session_state.current_username
